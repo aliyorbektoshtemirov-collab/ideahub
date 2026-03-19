@@ -10,11 +10,18 @@ require('./src/db');
 const { route }       = require('./src/routes');
 const ws              = require('./src/ws');
 const { verifyToken } = require('./src/helpers');
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-const PORT   = process.env.PORT || 3000;
-const PUB    = path.join(DATA_DIR, 'public');
-const UPLOAD = path.join(DATA_DIR, 'uploads');
 
+const DATA_DIR = process.env.DATA_DIR || __dirname;  // BU /data ga teng
+const PORT     = process.env.PORT || 3000;
+const PUB      = path.join(__dirname, 'public');     // MUHIM: __dirname dan public
+const UPLOAD   = path.join(DATA_DIR, 'uploads');     // BU /data/uploads da
+
+console.log('📁 DATA_DIR:', DATA_DIR);
+console.log('📁 PUB path:', PUB);
+console.log('📁 UPLOAD path:', UPLOAD);
+
+
+// ... qolgan kod o'zgarmaydi
 if (!fs.existsSync(UPLOAD)) fs.mkdirSync(UPLOAD, { recursive: true });
 
 const MIME = {
