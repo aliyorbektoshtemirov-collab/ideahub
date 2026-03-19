@@ -1,0 +1,576 @@
+/* ============================================
+   RESPONSIVE.CSS - IdeaHub uchun mobil moslashuv
+   Barcha ekran o'lchamlariga mos keladi
+   ============================================ */
+
+/* ----- ASOSIY O'ZGARUVCHILAR ----- */
+:root {
+  --mobile: 680px;
+  --tablet: 900px;
+  --desktop: 1200px;
+  --large: 1400px;
+}
+
+/* ----- TABLET (900px dan kichik) ----- */
+@media screen and (max-width: 900px) {
+  /* Layout */
+  #layout {
+    padding: 12px;
+    gap: 12px;
+  }
+  
+  /* Left sidebar yashirin */
+  .left-sb {
+    display: none !important;
+  }
+  
+  /* Right sidebar kichrayadi */
+  #rsb {
+    width: 240px;
+  }
+  
+  /* Post cards */
+  .post-title {
+    font-size: 18px;
+  }
+  
+  .post-meta {
+    font-size: 12px;
+  }
+  
+  /* Community page */
+  .com-hd-name {
+    font-size: 18px;
+  }
+  
+  .com-hd-icon {
+    width: 45px;
+    height: 45px;
+    font-size: 18px;
+  }
+}
+
+/* ----- MOBILE (720px dan kichik) ----- */
+@media screen and (max-width: 720px) {
+  /* Right sidebar yashirin */
+  #rsb {
+    display: none !important;
+  }
+  
+  /* Feed area to'liq ekran */
+  #feed-area {
+    max-height: calc(100vh - var(--tb-h) - 16px);
+    padding-right: 0;
+  }
+  
+  /* Sort bar */
+  .sort-bar {
+    padding: 5px;
+    margin-bottom: 8px;
+  }
+  
+  .sort-btn {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+  
+  .sort-btn svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  
+  /* Messages */
+  .msg-list {
+    width: 100%;
+  }
+  
+  .msg-wrap {
+    flex-direction: column;
+    height: calc(100vh - var(--tb-h) - 60px);
+  }
+  
+  .chat-col {
+    width: 100%;
+  }
+}
+
+/* ----- KICHIK MOBILE (680px dan kichik) ----- */
+@media screen and (max-width: 680px) {
+  /* Topbar */
+  #topbar {
+    padding: 0 10px;
+    gap: 5px;
+    height: auto;
+    min-height: var(--tb-h);
+    flex-wrap: wrap;
+  }
+  
+  .tb-logo-txt {
+    display: none;
+  }
+  
+  .tb-logo-mark {
+    width: 28px;
+    height: 28px;
+  }
+  
+  .tb-logo-mark svg {
+    width: 15px !important;
+    height: 15px !important;
+  }
+  
+  .tb-search {
+    order: 3;
+    max-width: 100%;
+    width: 100%;
+    margin: 5px 0;
+  }
+  
+  .tb-search input {
+    padding: 6px 12px 6px 32px;
+    font-size: 13px;
+  }
+  
+  .tb-right {
+    width: auto;
+    justify-content: flex-end;
+  }
+  
+  .tb-post-btn span {
+    display: none;
+  }
+  
+  .tb-post-btn {
+    padding: 7px;
+  }
+  
+  .tb-post-btn svg {
+    margin: 0;
+  }
+  
+  .tb-av-wrap .tb-av-info {
+    display: none;
+  }
+  
+  /* Post cards */
+  .post-card {
+    flex-direction: column;
+  }
+  
+  .vote-col {
+    width: 100%;
+    flex-direction: row;
+    justify-content: center;
+    padding: 5px;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .vote-col .v-btn {
+    width: 32px;
+    height: 32px;
+  }
+  
+  .post-body {
+    padding: 10px;
+  }
+  
+  .post-meta {
+    font-size: 11px;
+    gap: 4px;
+  }
+  
+  .post-title {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+  
+  .post-acts {
+    justify-content: space-around;
+  }
+  
+  .pa {
+    padding: 5px;
+    font-size: 11px;
+  }
+  
+  .pa svg {
+    width: 12px !important;
+    height: 12px !important;
+  }
+  
+  /* Comments */
+  .cmt {
+    padding-left: 8px;
+  }
+  
+  .cmt-hd {
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  
+  .cmt-author {
+    font-size: 12px;
+  }
+  
+  .cmt-ago {
+    font-size: 10px;
+  }
+  
+  .cmt-body {
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  
+  .cmt-acts {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+  
+  .ca {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+  
+  .reply-ta {
+    min-height: 60px;
+    font-size: 13px;
+  }
+  
+  /* Auth page */
+  .auth-wrap {
+    flex-direction: column;
+  }
+  
+  .auth-left {
+    padding: 30px 20px;
+  }
+  
+  .auth-right {
+    width: 100%;
+    padding: 30px 20px;
+  }
+  
+  .auth-logo-big {
+    font-size: 20px;
+  }
+  
+  .auth-tagline {
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+  
+  .auth-feat {
+    padding: 8px 12px;
+  }
+  
+  .auth-feat-txt {
+    font-size: 12px;
+  }
+  
+  /* Modals */
+  .modal {
+    width: 95%;
+    padding: 20px;
+    margin: 10px;
+  }
+  
+  .modal-title {
+    font-size: 16px;
+  }
+  
+  .modal-acts {
+    flex-direction: column;
+    gap: 6px;
+  }
+  
+  .modal-acts .btn {
+    width: 100%;
+  }
+  
+  /* Forms */
+  .form-row {
+    margin-bottom: 10px;
+  }
+  
+  .form-lbl {
+    font-size: 10px;
+  }
+  
+  .inp {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  
+  /* Community page */
+  .com-hd-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  
+  .com-hd-icon {
+    margin-top: -30px;
+  }
+  
+  .com-pop-inner {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .com-pop-info {
+    width: 100%;
+  }
+  
+  .com-pop-join {
+    width: 100%;
+    text-align: center;
+  }
+  
+  /* Profile */
+  .prof-hd {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  
+  .prof-av-wrap {
+    margin-top: -50px;
+  }
+  
+  .prof-stats {
+    justify-content: center;
+    gap: 15px;
+  }
+  
+  .prof-acts {
+    justify-content: center;
+  }
+  
+  /* Settings */
+  .set-card {
+    padding: 15px;
+  }
+  
+  .set-title {
+    font-size: 14px;
+  }
+  
+  .av-upload {
+    flex-direction: column;
+    text-align: center;
+    gap: 10px;
+  }
+  
+  /* Admin panel */
+  .admin-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  
+  .admin-stat {
+    padding: 12px;
+  }
+  
+  .as-n {
+    font-size: 20px;
+  }
+  
+  .admin-user-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .au-acts {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* ----- EXTRA SMALL (480px dan kichik) ----- */
+@media screen and (max-width: 480px) {
+  /* Post actions */
+  .post-acts {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 2px;
+  }
+  
+  .pa {
+    flex: 1 1 auto;
+    min-width: 70px;
+    justify-content: center;
+  }
+  
+  /* Comments */
+  .cmt-children {
+    padding-left: 8px;
+  }
+  
+  /* Profile stats */
+  .prof-stats {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .prof-stats > div {
+    min-width: 70px;
+  }
+  
+  .ps-n {
+    font-size: 16px;
+  }
+  
+  .ps-l {
+    font-size: 10px;
+  }
+  
+  /* Submit post */
+  .sub-tabs {
+    flex-wrap: wrap;
+  }
+  
+  .sub-tab {
+    flex: 1 1 auto;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  
+  /* Create community */
+  .com-dd-item {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+  
+  /* Notifications */
+  .notif {
+    padding: 10px;
+    gap: 8px;
+  }
+  
+  .notif-txt {
+    font-size: 12px;
+  }
+  
+  .notif-ago {
+    font-size: 10px;
+  }
+}
+
+/* ----- LANDSCAPE ORIENTATION ----- */
+@media (orientation: landscape) and (max-height: 500px) {
+  #topbar {
+    height: 48px;
+  }
+  
+  .modal {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+  .chat-msgs {
+    max-height: 300px;
+  }
+  
+  .msg-wrap {
+    height: calc(100vh - 60px);
+  }
+}
+
+/* ----- HIGH RESOLUTION (4K va undan katta) ----- */
+@media screen and (min-width: 1400px) {
+  #layout {
+    max-width: 1400px;
+    padding: 20px;
+    gap: 24px;
+  }
+  
+  .post-title {
+    font-size: 20px;
+  }
+  
+  .post-preview {
+    font-size: 15px;
+  }
+}
+
+/* ----- PRINT STYLES ----- */
+@media print {
+  #topbar,
+  .left-sb,
+  #rsb,
+  .post-acts,
+  .vote-col,
+  .btn,
+  .tb-post-btn,
+  .theme-btn {
+    display: none !important;
+  }
+  
+  #feed-area {
+    max-height: none;
+    overflow: visible;
+  }
+  
+  .post-card {
+    break-inside: avoid;
+    box-shadow: none;
+    border: 1px solid #ddd;
+  }
+  
+  body {
+    background: white;
+    color: black;
+  }
+  
+  a {
+    color: black !important;
+    text-decoration: underline;
+  }
+}
+
+/* ----- TOUCH OPTIMIZATION ----- */
+@media (hover: none) and (pointer: coarse) {
+  /* Tugmalarni kattaroq qilish */
+  .btn,
+  .pa,
+  .ca,
+  .v-btn,
+  .tb-ico,
+  .lsb-btn,
+  .com-pop-join {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Input zoom oldini olish */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+  
+  /* Smooth scrolling */
+  #feed-area,
+  .convos,
+  .chat-msgs {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* ----- SAFE AREA (iPhone X va undan keyingi) ----- */
+@supports (padding: max(0px)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  
+  #topbar {
+    padding-left: max(18px, env(safe-area-inset-left));
+    padding-right: max(18px, env(safe-area-inset-right));
+  }
+  
+  .modal {
+    margin-left: max(16px, env(safe-area-inset-left));
+    margin-right: max(16px, env(safe-area-inset-right));
+  }
+}
