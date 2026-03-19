@@ -1,9 +1,20 @@
 'use strict';
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 
-const db = new DatabaseSync(path.join(__dirname, '..', 'ideahub.db'));
+// DATA_DIR o'zgaruvchisini ishlatish
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+// Ma'lumotlar bazasini to'g'ri joyga yaratish
+const dbPath = path.join(DATA_DIR, 'ideahub.db');
+console.log('📦 Database path:', dbPath); // Log qo'shildi
+
+const db = new DatabaseSync(dbPath);
 db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;');
 
 db.exec(`
