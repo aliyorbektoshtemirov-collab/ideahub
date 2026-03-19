@@ -10,10 +10,10 @@ require('./src/db');
 const { route }       = require('./src/routes');
 const ws              = require('./src/ws');
 const { verifyToken } = require('./src/helpers');
-
+const DATA_DIR = process.env.DATA_DIR || __dirname;
 const PORT   = process.env.PORT || 3000;
-const PUB    = path.join(__dirname, 'public');
-const UPLOAD = path.join(__dirname, 'uploads');
+const PUB    = path.join(DATA_DIR, 'public');
+const UPLOAD = path.join(DATA_DIR, 'uploads');
 
 if (!fs.existsSync(UPLOAD)) fs.mkdirSync(UPLOAD, { recursive: true });
 
@@ -96,4 +96,5 @@ server.on('upgrade', (req, socket) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  IdeaHub  →  http://localhost:${PORT}\n`);
+
 });

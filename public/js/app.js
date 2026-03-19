@@ -247,6 +247,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Show guest mode or auth screen
     }
   }
+  // Mobile menu toggle
+function toggleMobileMenu() {
+  const menu = document.querySelector('.left-sb');
+  menu.classList.toggle('open');
+}
+
+// Click outside to close
+document.addEventListener('click', function(event) {
+  const menu = document.querySelector('.left-sb');
+  const btn = document.querySelector('.mobile-menu-btn');
+  
+  if (menu && menu.classList.contains('open') && 
+      !menu.contains(event.target) && 
+      !btn?.contains(event.target)) {
+    menu.classList.remove('open');
+  }
+});
 });
 
 window.showAuthModal = showAuthModal;
