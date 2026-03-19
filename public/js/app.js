@@ -248,9 +248,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
   // Mobile menu toggle
+// Mobile menu toggle
 function toggleMobileMenu() {
   const menu = document.querySelector('.left-sb');
-  menu.classList.toggle('open');
+  if (menu) {
+    menu.classList.toggle('open');
+  }
 }
 
 // Click outside to close
@@ -260,7 +263,15 @@ document.addEventListener('click', function(event) {
   
   if (menu && menu.classList.contains('open') && 
       !menu.contains(event.target) && 
-      !btn?.contains(event.target)) {
+      btn && !btn.contains(event.target)) {
+    menu.classList.remove('open');
+  }
+});
+
+// Close menu on window resize (if screen becomes larger)
+window.addEventListener('resize', function() {
+  const menu = document.querySelector('.left-sb');
+  if (menu && window.innerWidth > 900) {
     menu.classList.remove('open');
   }
 });
