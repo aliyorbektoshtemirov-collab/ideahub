@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 'use strict';
+require('fs').copyFileSync('./ideahub.db', process.env.DATA_DIR + '/ideahub.db');
+console.log('✅ Database file copied!');
 const http = require('http');
 const fs   = require('fs');
 const path = require('path');
