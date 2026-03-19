@@ -1,5 +1,100 @@
 @import url('https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600&display=swap');
+/* ===== RESPONSIVE COMPONENTS ===== */
 
+/* Responsive tables */
+@media (max-width: 680px) {
+  .admin-table, .admin-table thead, .admin-table tbody, 
+  .admin-table th, .admin-table td, .admin-table tr {
+    display: block;
+  }
+  
+  .admin-table thead { display: none; }
+  
+  .admin-table tr {
+    margin-bottom: 15px;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    padding: 10px;
+  }
+  
+  .admin-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  
+  .admin-table td:last-child { border-bottom: none; }
+  
+  .admin-table td:before {
+    content: attr(data-label);
+    font-weight: 700;
+    color: var(--tx4);
+    margin-right: 10px;
+  }
+}
+
+/* Responsive grids */
+@media (max-width: 680px) {
+  .admin-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  
+  .prof-stats {
+    flex-wrap: wrap;
+    gap: 15px;
+  }
+  
+  .post-stats-row {
+    flex-wrap: wrap;
+  }
+}
+
+/* Responsive images */
+.post-img img, .prof-banner img, .avatar-img {
+  width: 100%;
+  height: auto;
+  object-fit: cover;
+}
+
+/* Responsive videos */
+.video-embed {
+  position: relative;
+  padding-bottom: 56.25%; /* 16:9 */
+  height: 0;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.video-embed iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Responsive poll */
+@media (max-width: 680px) {
+  .poll-opt {
+    padding: 12px;
+    font-size: 14px;
+  }
+  
+  .poll-result {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 5px;
+  }
+  
+  .poll-bar {
+    width: 100% !important;
+    height: 30px;
+    border-radius: var(--r);
+  }
+}
 :root {
   --gold:      #C8922A;
   --gold-lt:   #E5AA3A;

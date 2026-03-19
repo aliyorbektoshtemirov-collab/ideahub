@@ -7,6 +7,10 @@
 <link rel="stylesheet" href="/css/main.css">
 <link rel="stylesheet" href="/css/layout.css">
 <link rel="stylesheet" href="/css/components.css">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<meta name="theme-color" content="#C8922A">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 </head>
 <body>
 
@@ -414,9 +418,14 @@
     <div class="form-row" style="margin-bottom:0">
       <div class="form-lbl">Rang</div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        ${['#C8922A','#4D8FFF','#46C97A','#9B6FD4','#3AADCC','#E8703A','#D94040','#2E9E5B'].map((c,i)=>
-          `<label style="cursor:pointer"><input type="radio" name="nc-color" value="${c}" ${i===0?'checked':''} style="display:none">
-          <span style="display:block;width:28px;height:28px;border-radius:50%;background:${c};border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>`).join('')}
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#C8922A" checked style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#C8922A;border:2.5px solid #fff;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#4D8FFF" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#4D8FFF;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#46C97A" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#46C97A;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#9B6FD4" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#9B6FD4;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#3AADCC" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#3AADCC;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#E8703A" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#E8703A;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#D94040" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#D94040;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
+        <label style="cursor:pointer"><input type="radio" name="nc-color" value="#2E9E5B" style="display:none"><span style="display:block;width:28px;height:28px;border-radius:50%;background:#2E9E5B;border:2.5px solid transparent;transition:all .15s" onclick="this.previousElementSibling.checked=true;document.querySelectorAll('[name=nc-color]').forEach(r=>{r.nextElementSibling.style.borderColor=r.checked?'#fff':'transparent'})"></span></label>
       </div>
     </div>
     <div class="modal-acts">
