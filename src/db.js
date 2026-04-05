@@ -29,6 +29,7 @@ db.exec(`
     color TEXT DEFAULT '#C8922A',
     bio TEXT DEFAULT '',
     karma INTEGER DEFAULT 0,
+    followers INTEGER DEFAULT 0,
     is_admin INTEGER DEFAULT 0,
     is_banned INTEGER DEFAULT 0,
     ban_reason TEXT,
@@ -42,6 +43,8 @@ db.exec(`
     rules TEXT DEFAULT '',
     color TEXT DEFAULT '#C8922A',
     owner_id TEXT NOT NULL,
+    avatar TEXT,
+    banner TEXT,
     members INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch()),
     FOREIGN KEY(owner_id) REFERENCES users(id)
@@ -59,6 +62,8 @@ db.exec(`
     body TEXT DEFAULT '',
     link TEXT,
     image TEXT,
+    video TEXT,
+    audio TEXT,
     type TEXT DEFAULT 'text',
     score INTEGER DEFAULT 1,
     upvotes INTEGER DEFAULT 1,
@@ -133,6 +138,27 @@ db.exec(`
     status TEXT DEFAULT 'pending',
     created_at INTEGER DEFAULT (unixepoch())
   );
+  CREATE TABLE IF NOT EXISTS polls (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL UNIQUE,
+    question TEXT NOT NULL,
+    options TEXT NOT NULL, -- JSON array
+    duration_days INTEGER DEFAULT 3,
+    ends_at INTEGER NOT NULL,
+    created_at INTEGER DEFAULT (unixepoch()),
+    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE
+  );
+  CREATE TABLE IF NOT EXISTS poll_votes (
+    user_id TEXT NOT NULL,
+    poll_id TEXT NOT NULL,
+    option_index INTEGER NOT NULL,
+    PRIMARY KEY(user_id, poll_id)
+  );
+  CREATE TABLE IF NOT EXISTS push_tokens (
+    user_id TEXT NOT NULL,
+    token TEXT NOT NULL,
+    PRIMARY KEY(user_id, token)
+  );
   CREATE TABLE IF NOT EXISTS reset_tokens (
     token TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -141,12 +167,19 @@ db.exec(`
   );
 `);
 
+// Migrations for existing databases
+try { db.exec('ALTER TABLE posts ADD COLUMN video TEXT'); } catch {}
+try { db.exec('ALTER TABLE posts ADD COLUMN audio TEXT'); } catch {}
+try { db.exec('ALTER TABLE communities ADD COLUMN avatar TEXT'); } catch {}
+try { db.exec('ALTER TABLE communities ADD COLUMN banner TEXT'); } catch {}
+try { db.exec('ALTER TABLE users ADD COLUMN followers INTEGER DEFAULT 0'); } catch {}
+
 const Q = {
   /* users */
-  uById:      db.prepare('SELECT id,username,name,email,color,bio,avatar,banner,karma,is_admin,is_banned,ban_reason,created_at FROM users WHERE id=?'),
+  uById:      db.prepare('SELECT id,username,name,email,color,bio,avatar,banner,karma,followers,is_admin,is_banned,ban_reason,created_at FROM users WHERE id=?'),
   uByIdFull:  db.prepare('SELECT * FROM users WHERE id=?'),
   uByLogin:   db.prepare('SELECT * FROM users WHERE lower(username)=lower(?) OR lower(email)=lower(?)'),
-  uBySlug:    db.prepare('SELECT id,username,name,color,bio,avatar,banner,karma,is_admin,is_banned,created_at FROM users WHERE lower(username)=lower(?) OR id=?'),
+  uBySlug:    db.prepare('SELECT id,username,name,color,bio,avatar,banner,karma,followers,is_admin,is_banned,created_at FROM users WHERE lower(username)=lower(?) OR id=?'),
   uByUsername:db.prepare('SELECT id,username,name,email FROM users WHERE lower(username)=lower(?)'),
   uSearch:    db.prepare('SELECT id,username,name,color,avatar,karma FROM users WHERE lower(username) LIKE ? OR lower(name) LIKE ? LIMIT 20'),
   uInsert:    db.prepare('INSERT INTO users(id,username,name,email,pass,color) VALUES(?,?,?,?,?,?)'),
@@ -156,6 +189,7 @@ const Q = {
   uUpdAv:     db.prepare('UPDATE users SET avatar=? WHERE id=?'),
   uUpdBanner: db.prepare('UPDATE users SET banner=? WHERE id=?'),
   uKarma:     db.prepare('UPDATE users SET karma=karma+? WHERE id=?'),
+  uFollowers: db.prepare('UPDATE users SET followers=(SELECT COUNT(*) FROM follows WHERE following_id=id) WHERE id=?'),
   uAll:       db.prepare('SELECT id,username,name,email,color,avatar,karma,is_admin,is_banned,ban_reason,created_at FROM users ORDER BY created_at DESC LIMIT 100'),
   uBan:       db.prepare('UPDATE users SET is_banned=1,ban_reason=? WHERE id=?'),
   uUnban:     db.prepare('UPDATE users SET is_banned=0,ban_reason=NULL WHERE id=?'),
@@ -186,7 +220,7 @@ const Q = {
   pComNew: db.prepare('SELECT p.*,u.username,u.color,u.avatar,c.slug as cslug,c.name as cname,c.color as ccolor FROM posts p JOIN users u ON p.user_id=u.id JOIN communities c ON p.community_id=c.id WHERE lower(c.slug)=lower(?) ORDER BY p.created_at DESC LIMIT 25 OFFSET ?'),
   pByUser: db.prepare('SELECT p.*,u.username,u.color,u.avatar,c.slug as cslug,c.name as cname,c.color as ccolor FROM posts p JOIN users u ON p.user_id=u.id JOIN communities c ON p.community_id=c.id WHERE p.user_id=? ORDER BY p.created_at DESC LIMIT 25'),
   pOne:    db.prepare('SELECT p.*,u.username,u.color,u.avatar,c.slug as cslug,c.name as cname,c.color as ccolor FROM posts p JOIN users u ON p.user_id=u.id JOIN communities c ON p.community_id=c.id WHERE p.id=?'),
-  pInsert: db.prepare('INSERT INTO posts(id,user_id,community_id,title,body,link,image,type,flair) VALUES(?,?,?,?,?,?,?,?,?)'),
+  pInsert: db.prepare('INSERT INTO posts(id,user_id,community_id,title,body,link,image,video,audio,type,flair) VALUES(?,?,?,?,?,?,?,?,?,?,?)'),
   pDelete: db.prepare('DELETE FROM posts WHERE id=?'),
   pUpdate: db.prepare('UPDATE posts SET title=?,body=? WHERE id=? AND user_id=?'),
   pOwner:  db.prepare('SELECT user_id,community_id FROM posts WHERE id=?'),
@@ -241,6 +275,27 @@ const Q = {
   nAll:      db.prepare('SELECT n.*,u.username as fn,u.color as fc,u.avatar as fa FROM notifications n LEFT JOIN users u ON n.from_id=u.id WHERE n.to_id=? ORDER BY n.created_at DESC LIMIT 60'),
   nMarkRead: db.prepare('UPDATE notifications SET is_read=1 WHERE to_id=?'),
   nUnread:   db.prepare('SELECT COUNT(*) as c FROM notifications WHERE to_id=? AND is_read=0'),
+
+  /* polls */
+  pollInsert:  db.prepare('INSERT INTO polls(id,post_id,question,options,duration_days,ends_at) VALUES(?,?,?,?,?,?)'),
+  pollGet:     db.prepare('SELECT * FROM polls WHERE post_id=?'),
+  pollGetById: db.prepare('SELECT * FROM polls WHERE id=?'),
+  pollVoteGet: db.prepare('SELECT option_index FROM poll_votes WHERE user_id=? AND poll_id=?'),
+  pollVoteIns: db.prepare('INSERT OR IGNORE INTO poll_votes(user_id,poll_id,option_index) VALUES(?,?,?)'),
+  pollVoteCnt: db.prepare('SELECT option_index,COUNT(*) as cnt FROM poll_votes WHERE poll_id=? GROUP BY option_index'),
+  pollTotalVotes: db.prepare('SELECT COUNT(*) as c FROM poll_votes WHERE poll_id=?'),
+
+  /* push tokens */
+  pushIns:    db.prepare('INSERT OR IGNORE INTO push_tokens(user_id,token) VALUES(?,?)'),
+  pushDel:    db.prepare('DELETE FROM push_tokens WHERE user_id=? AND token=?'),
+  pushByUser: db.prepare('SELECT token FROM push_tokens WHERE user_id=?'),
+
+  /* followers list for notifications */
+  fwFollowersList: db.prepare('SELECT follower_id FROM follows WHERE following_id=?'),
+  fwFollowersCount: db.prepare('SELECT COUNT(*) as c FROM follows WHERE following_id=?'),
+
+  /* community update with image */
+  comUpdateFull: db.prepare('UPDATE communities SET name=?,description=?,rules=?,color=?,avatar=?,banner=? WHERE id=?'),
 
   /* reports */
   rpInsert:  db.prepare('INSERT INTO reports(id,reporter_id,post_id,comment_id,reason) VALUES(?,?,?,?,?)'),
