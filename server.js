@@ -11,23 +11,27 @@ const { route }       = require('./src/routes');
 const ws              = require('./src/ws');
 const { verifyToken } = require('./src/helpers');
 
-const DATA_DIR = process.env.DATA_DIR || __dirname;  // BU /data ga teng
+const DATA_DIR = process.env.DATA_DIR || __dirname;
 const PORT     = process.env.PORT || 3000;
-const PUB      = path.join(__dirname, 'public');     // MUHIM: __dirname dan public
-const UPLOAD   = path.join(DATA_DIR, 'uploads');     // BU /data/uploads da
+const PUB      = path.join(__dirname, 'public');
+const UPLOAD   = path.join(DATA_DIR, 'uploads');
 
 console.log('📁 DATA_DIR:', DATA_DIR);
 console.log('📁 PUB path:', PUB);
 console.log('📁 UPLOAD path:', UPLOAD);
 
-
-// ... qolgan kod o'zgarmaydi
 if (!fs.existsSync(UPLOAD)) fs.mkdirSync(UPLOAD, { recursive: true });
 
 const MIME = {
   '.html':'text/html;charset=utf-8', '.css':'text/css', '.js':'application/javascript',
-  '.json':'application/json', '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
+  '.json':'application/json',
+  '.png':'image/png', '.jpg':'image/jpeg', '.jpeg':'image/jpeg',
   '.gif':'image/gif', '.webp':'image/webp', '.svg':'image/svg+xml', '.ico':'image/x-icon',
+  // Audio/Video MIME types - required for browser playback
+  '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg',
+  '.m4a':'audio/mp4', '.aac':'audio/aac',
+  '.webm':'video/webm', '.mp4':'video/mp4', '.mov':'video/quicktime',
+  '.avi':'video/x-msvideo', '.mkv':'video/x-matroska',
 };
 
 const server = http.createServer(async (req, res) => {
@@ -45,8 +49,34 @@ const server = http.createServer(async (req, res) => {
   if (pname.startsWith('/uploads/')) {
     const f = path.join(UPLOAD, path.basename(pname));
     if (fs.existsSync(f)) {
-      const ext = path.extname(f).toLowerCase();
-      res.writeHead(200, { 'Content-Type': MIME[ext] || 'application/octet-stream', 'Cache-Control': 'public,max-age=31536000' });
+      const ext  = path.extname(f).toLowerCase();
+      const mime = MIME[ext] || 'application/octet-stream';
+      const stat = fs.statSync(f);
+      const total = stat.size;
+
+      // Range request support (needed for audio/video seeking in browser)
+      const range = req.headers.range;
+      if (range && (mime.startsWith('audio') || mime.startsWith('video'))) {
+        const parts  = range.replace(/bytes=/, '').split('-');
+        const start  = parseInt(parts[0], 10);
+        const end    = parts[1] ? parseInt(parts[1], 10) : total - 1;
+        const chunkSize = end - start + 1;
+        const fileStream = fs.createReadStream(f, { start, end });
+        res.writeHead(206, {
+          'Content-Range':  `bytes ${start}-${end}/${total}`,
+          'Accept-Ranges':  'bytes',
+          'Content-Length': chunkSize,
+          'Content-Type':   mime,
+        });
+        return fileStream.pipe(res);
+      }
+
+      res.writeHead(200, {
+        'Content-Type':   mime,
+        'Content-Length': total,
+        'Accept-Ranges':  'bytes',
+        'Cache-Control':  'public,max-age=31536000',
+      });
       return fs.createReadStream(f).pipe(res);
     }
     res.writeHead(404); return res.end('Not found');
@@ -90,7 +120,17 @@ server.on('upgrade', (req, socket) => {
     socket.on('data', chunk => {
       buf = Buffer.concat([buf, chunk]);
       const f = ws.decode(buf);
-      if (f) { buf = Buffer.alloc(0); if (f.close) socket.destroy(); }
+      if (f) {
+        buf = Buffer.alloc(0);
+        if (f.close) { socket.destroy(); return; }
+        // Forward WebRTC signaling messages from client
+        if (f.data && f.data.type && uid) {
+          const d = f.data;
+          if (['call_offer','call_answer','ice_candidate','call_end','call_reject'].includes(d.type)) {
+            if (d.to) ws.sendTo(d.to, { type: d.type, data: { ...d, from: uid } });
+          }
+        }
+      }
     });
     socket.on('close', () => { if (uid) ws.remove(uid, socket); });
     socket.on('error', () => { try { socket.destroy(); } catch {} });
@@ -103,5 +143,4 @@ server.on('upgrade', (req, socket) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  IdeaHub  →  http://localhost:${PORT}\n`);
-
 });

@@ -116,7 +116,7 @@ async function boot(initialUser){
   window._me=initialUser||await API.me();
   syncTopbar(window._me);
   WS.connect(Tok.get());
-  initFeedWS();initMsgWS();initNotifWS();
+  initFeedWS();initMsgWS();initNotifWS();if(typeof initCallWS==='function')initCallWS();
   await Promise.all([loadFeed(true),loadNotifCount(),loadConvos(),loadMyComs(),loadTopComs(),initComPicker()]);
   initScrollFeed();
   buildRsb();

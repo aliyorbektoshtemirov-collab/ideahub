@@ -600,7 +600,51 @@ function togglePinMsg(msg,bubbleEl) {
   else{const pin=document.createElement('div');pin.className='bubble-pin-icon';pin.innerHTML='📌 Mahkamlangan';bubbleEl.prepend(pin);msg.pinned=true;if(pinBar){pinBar.style.display='flex';const txt=pinBar.querySelector('.msg-pinned-text');if(txt)txt.textContent=(bubbleEl.dataset.body||'').slice(0,50);pinBar.onclick=()=>bubbleEl.scrollIntoView({behavior:'smooth',block:'center'});}toast('Xabar mahkamlandi');}
 }
 function deleteMsg(msgId,bubbleEl){bubbleEl.style.transition='all .25s ease';bubbleEl.style.opacity='0';bubbleEl.style.transform='scale(.85)';setTimeout(()=>bubbleEl.remove(),250);toast("Xabar o'chirildi");}
-function playVoiceMsg(btn,url){if(!url){toast('Audio fayl mavjud emas');return;}const audio=new Audio(url);btn.innerHTML='⏸';audio.play().catch(()=>toast('Audio ijro etilmadi'));audio.onended=()=>{btn.innerHTML='▶';};btn.onclick=()=>{if(audio.paused){audio.play();btn.innerHTML='⏸';}else{audio.pause();btn.innerHTML='▶';}}}
+function playVoiceMsg(btn, url) {
+  if (!url) { toast('Audio fayl mavjud emas'); return; }
+  // Reuse existing audio object
+  if (btn._audio) {
+    if (btn._audio.paused) {
+      btn._audio.play().catch(()=>toast('Ijro etilmadi'));
+      btn.innerHTML = '⏸';
+    } else {
+      btn._audio.pause();
+      btn.innerHTML = '▶';
+    }
+    return;
+  }
+  // Stop any other playing voice
+  document.querySelectorAll('.voice-play-btn[data-playing]').forEach(b=>{
+    if(b._audio){b._audio.pause();b.innerHTML='▶';b.removeAttribute('data-playing');}
+  });
+  const audio = new Audio(url);
+  btn._audio = audio;
+  btn.setAttribute('data-playing','1');
+  const bars = btn.closest('.voice-msg-bubble')?.querySelector('.voice-bars');
+  const timeEl = btn.closest('.voice-msg-bubble')?.querySelector('.player-time');
+  audio.addEventListener('timeupdate', ()=>{
+    if (!audio.duration) return;
+    const pct = audio.currentTime / audio.duration;
+    if (timeEl) timeEl.textContent = fmtTime(audio.currentTime);
+    if (bars) {
+      const n = bars.children.length;
+      Array.from(bars.children).forEach((s,i)=>{
+        s.style.height = (i < Math.round(pct*n)) ? '14px' : (4+Math.round(Math.abs(Math.sin(i*.8))*14))+'px';
+        s.style.opacity = (i < Math.round(pct*n)) ? '1' : '.4';
+      });
+    }
+  });
+  audio.onended = () => {
+    btn.innerHTML = '▶';
+    btn.removeAttribute('data-playing');
+    if (timeEl && audio.duration) timeEl.textContent = fmtTime(audio.duration);
+    if (bars) Array.from(bars.children).forEach((s,i)=>{
+      s.style.height = (4+Math.round(Math.abs(Math.sin(i*.8))*14))+'px';
+      s.style.opacity = '.4';
+    });
+  };
+  audio.play().then(()=>{ btn.innerHTML='⏸'; }).catch(()=>toast('Audio ijro etilmadi'));
+}
 
 async function sendMsg() {
   if(!_chatWith){toast("Avval suhbatdosh tanlang");return;}
@@ -698,51 +742,257 @@ function cancelVoice(){
 function sendVoiceMsg(){
   if(!_mediaRecorder) return;
   clearInterval(_voiceTimer);
-  _mediaRecorder.onstop=async()=>{
-    const blob=new Blob(_audioChunks,{type:'audio/webm'});_audioChunks=[];
-    const dur=_voiceSeconds;
-    const url=URL.createObjectURL(blob);
-    const fakeMsg={id:'vm-'+Date.now(),type:'voice',audio_url:url,duration:Math.floor(dur/60)+':'+(dur%60<10?'0':'')+(dur%60),body:'[Ovozli xabar]',ago:'Hozir',seen:false};
-    addBubble(fakeMsg,true);
+  const dur = _voiceSeconds;
+  _mediaRecorder.onstop = async () => {
+    const blob = new Blob(_audioChunks, {type:'audio/webm'});
+    _audioChunks = [];
+    const localUrl = URL.createObjectURL(blob);
+    const durStr = Math.floor(dur/60)+':'+(dur%60<10?'0':'')+dur%60;
+    // Show immediately in own chat
+    addBubble({id:'vm-'+Date.now(),type:'voice',audio_url:localUrl,duration:durStr,body:'[Ovozli xabar]',ago:'Hozir',seen:false}, true);
+    // Upload so recipient can play
+    if (_chatWith) {
+      try {
+        const fd = new FormData();
+        fd.append('voice', blob, 'voice.webm');
+        fd.append('to_id', _chatWith.id);
+        fd.append('duration', durStr);
+        await fetch('/api/messages/voice', {
+          method:'POST',
+          headers:{ Authorization:'Bearer '+Tok.get() },
+          body: fd
+        });
+      } catch(e){ console.error('voice upload:',e); }
+    }
   };
   if(_mediaRecorder.state!=='inactive'){_mediaRecorder.stream?.getTracks().forEach(t=>t.stop());_mediaRecorder.stop();}
   document.getElementById('voice-rec-bar').style.display='none';
   document.getElementById('chat-inp-row').style.display='flex';
-  _voiceSeconds=0;
+  _voiceSeconds = 0;
 }
 
-/* ═══ CALLS ═══ */
-function startVideoCall(){if(!_chatWith){toast("Avval suhbatdosh tanlang");return;}buildCallModal('video');}
-function startVoiceCall(){if(!_chatWith){toast("Avval suhbatdosh tanlang");return;}buildCallModal('audio');}
+/* ═══ REAL WebRTC CALLS ═══ */
+let _pc = null, _localStream = null, _callType = null, _callWith = null;
+let _callTimerInterval = null, _callSecs = 0, _pendingOffer = null;
 
-function buildCallModal(type){
-  const isVideo=type==='video',u=_chatWith;
-  document.getElementById('vcall-modal')?.remove();document.getElementById('acall-modal')?.remove();
-  const ov=document.createElement('div');ov.id=isVideo?'vcall-modal':'acall-modal';
-  const color=u.color||'#C8922A',initStr=initials(u.name||u.username);
-  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease';
-  if(isVideo){ov.innerHTML=`<div style="width:min(500px,96vw);background:#0a0a12;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.08);display:flex;flex-direction:column;animation:modalPop .3s cubic-bezier(.34,1.56,.64,1)"><div style="padding:14px 18px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.06);display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-size:15px;font-weight:700;color:#fff;font-family:'Syne',sans-serif">${esc(u.name||u.username)}</div><div style="font-size:12px;color:rgba(255,255,255,.4)" id="vcall-status">Ulanyapti...</div></div><button onclick="endCall('video')" style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.08);border:none;color:rgba(255,255,255,.6);cursor:pointer;font-size:15px">✕</button></div><div style="position:relative;background:#050508;aspect-ratio:4/3;overflow:hidden"><div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:linear-gradient(135deg,#0f1117,#1a1d2e)"><div style="width:80px;height:80px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${initStr}</div></div><video id="vcall-remote" autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none"></video><video id="vcall-local" autoplay playsinline muted style="position:absolute;bottom:12px;right:12px;width:90px;height:68px;object-fit:cover;border-radius:10px;border:2px solid rgba(255,255,255,.2);background:#111"></video></div><div style="display:flex;align-items:center;justify-content:center;gap:14px;padding:18px;background:#0a0a12"><button onclick="toggleCallMic()" style="width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Mikrofon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></button><button onclick="toggleCallCam()" style="width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center" title="Kamera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></button><button onclick="endCall('video')" style="width:58px;height:58px;border-radius:50%;background:#e53e3e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(229,62,62,.4)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="22" height="22"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6z"/></svg></button></div></div>`;
-  }else{ov.innerHTML=`<div style="width:min(340px,92vw);background:#0a0a12;border-radius:28px;border:1px solid rgba(255,255,255,.08);padding:36px 24px 28px;display:flex;flex-direction:column;align-items:center;gap:20px;animation:modalPop .3s cubic-bezier(.34,1.56,.64,1)"><div style="width:88px;height:88px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:34px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${initStr}</div><div style="text-align:center"><div style="font-size:20px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${esc(u.name||u.username)}</div><div style="font-size:13px;color:rgba(255,255,255,.4);margin-top:4px" id="acall-status">Ulanyapti...</div></div><div style="display:flex;align-items:center;gap:16px;margin-top:8px"><button onclick="toggleCallMic()" style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/></svg></button><button onclick="endCall('audio')" style="width:64px;height:64px;border-radius:50%;background:#e53e3e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 20px rgba(229,62,62,.5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="24" height="24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6z"/></svg></button><button onclick="toggleSpeaker()" style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.12);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg></button></div></div>`;}
-  document.body.appendChild(ov);
-  ov.onclick=e=>{if(e.target===ov)endCall(type);};
-  navigator.mediaDevices?.getUserMedia(isVideo?{video:true,audio:true}:{audio:true}).then(stream=>{
-    window._callStream=stream;
-    const st=document.getElementById(isVideo?'vcall-status':'acall-status');
-    if(st){let s=0;const t=setInterval(()=>{s++;const m=Math.floor(s/60),sec=s%60;st.textContent=m+':'+(sec<10?'0':'')+sec;},1000);ov._timer=t;}
-    if(isVideo){const lv=document.getElementById('vcall-local');if(lv)lv.srcObject=stream;}
-  }).catch(()=>{const st=document.getElementById(isVideo?'vcall-status':'acall-status');if(st)st.textContent="Qurilmaga ulanib bo'lmadi";});
+const STUN = { iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}] };
+
+function startVideoCall(){ if(!_chatWith){toast('Avval suhbatdosh tanlang');return;} initiateCall('video',_chatWith); }
+function startVoiceCall(){ if(!_chatWith){toast('Avval suhbatdosh tanlang');return;} initiateCall('audio',_chatWith); }
+
+async function initiateCall(type, user) {
+  _callType = type; _callWith = user;
+  try {
+    _localStream = await navigator.mediaDevices.getUserMedia(type==='video'?{video:true,audio:true}:{audio:true});
+  } catch(e) { toast('Mikrofon/kameraga ruxsat berilmadi'); return; }
+  _pc = new RTCPeerConnection(STUN);
+  _localStream.getTracks().forEach(t=>_pc.addTrack(t,_localStream));
+  _pc.onicecandidate = e=>{ if(e.candidate) _sendCallSignal('ice',user.id,{candidate:e.candidate}); };
+  _pc.ontrack = e=>{ _attachRemoteStream(e.streams[0]); };
+  _pc.onconnectionstatechange = ()=>{ if(_pc?.connectionState==='connected') _startCallTimer(); };
+  showCallUI(type, user, 'calling');
+  if(type==='video'){ const lv=document.getElementById('call-local-vid'); if(lv) lv.srcObject=_localStream; }
+  try {
+    const offer = await _pc.createOffer();
+    await _pc.setLocalDescription(offer);
+    await _sendCallSignal('offer', user.id, { offer, call_type: type });
+  } catch(e) { console.error('offer error:',e); endCall(); toast("Qo'ng'iroq boshlanmadi"); }
 }
 
-function endCall(type){
-  clearInterval(document.getElementById(type==='video'?'vcall-modal':'acall-modal')?._timer);
-  window._callStream?.getTracks().forEach(t=>t.stop());window._callStream=null;
-  const el=document.getElementById(type==='video'?'vcall-modal':'acall-modal');
-  if(el){el.style.opacity='0';el.style.transition='opacity .2s';setTimeout(()=>el.remove(),200);}
+async function acceptCall() {
+  const data = _pendingOffer; if(!data) return;
+  _pendingOffer = null;
+  _callType = data.call_type || 'audio';
+  _callWith = { id:data.from_id, name:data.from_name, username:data.from_username, avatar:data.from_avatar, color:data.from_color };
+  stopRingtone();
+  try {
+    _localStream = await navigator.mediaDevices.getUserMedia(_callType==='video'?{video:true,audio:true}:{audio:true});
+  } catch(e) { toast('Mikrofon/kameraga ruxsat berilmadi'); _sendCallSignal('reject',data.from_id,{}); removeCallUI(); return; }
+  _pc = new RTCPeerConnection(STUN);
+  _localStream.getTracks().forEach(t=>_pc.addTrack(t,_localStream));
+  _pc.onicecandidate = e=>{ if(e.candidate) _sendCallSignal('ice',data.from_id,{candidate:e.candidate}); };
+  _pc.ontrack = e=>{ _attachRemoteStream(e.streams[0]); };
+  _pc.onconnectionstatechange = ()=>{ if(_pc?.connectionState==='connected') _startCallTimer(); };
+  showCallUI(_callType, _callWith, 'connected');
+  if(_callType==='video'){ const lv=document.getElementById('call-local-vid'); if(lv) lv.srcObject=_localStream; }
+  try {
+    await _pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+    const answer = await _pc.createAnswer();
+    await _pc.setLocalDescription(answer);
+    await _sendCallSignal('answer', data.from_id, { answer });
+  } catch(e) { console.error('answer error:',e); endCall(); }
 }
-function toggleCallMic(){if(!window._callStream)return;const t=window._callStream.getAudioTracks()[0];if(t){t.enabled=!t.enabled;toast(t.enabled?'Mikrofon yoqildi':'Mikrofon o\'chirildi');}}
-function toggleCallCam(){if(!window._callStream)return;const t=window._callStream.getVideoTracks()[0];if(t){t.enabled=!t.enabled;toast(t.enabled?'Kamera yoqildi':'Kamera o\'chirildi');}}
-function toggleSpeaker(){toast('Karnay almashtirildi');}
 
+async function rejectCall(fromId) {
+  stopRingtone(); _pendingOffer = null; removeCallUI();
+  if(fromId) await _sendCallSignal('reject', fromId, {}).catch(()=>{});
+}
+
+function endCall() {
+  clearInterval(_callTimerInterval); _callTimerInterval = null; _callSecs = 0;
+  if(_localStream){ _localStream.getTracks().forEach(t=>t.stop()); _localStream=null; }
+  if(_pc){ try{_pc.close();}catch{} _pc=null; }
+  stopRingtone();
+  if(_callWith) _sendCallSignal('end', _callWith.id, {}).catch(()=>{});
+  _callWith = null; _callType = null; _pendingOffer = null;
+  removeCallUI();
+}
+
+async function _sendCallSignal(type, toId, data) {
+  const endpointMap = { offer:'/api/call/offer', answer:'/api/call/answer', ice:'/api/call/ice', end:'/api/call/end', reject:'/api/call/reject' };
+  const ep = endpointMap[type]; if(!ep) return;
+  await fetch(ep, { method:'POST', headers:{ Authorization:'Bearer '+Tok.get(), 'Content-Type':'application/json' }, body:JSON.stringify({ to_id:toId, ...data }) });
+}
+
+function _attachRemoteStream(stream) {
+  const rv = document.getElementById('call-remote-vid');
+  const ra = document.getElementById('call-remote-aud');
+  if(rv && stream){ rv.srcObject=stream; rv.style.display='block'; document.getElementById('call-no-cam')?.style.setProperty('display','none'); }
+  if(ra && stream){ ra.srcObject=stream; ra.play().catch(()=>{}); }
+  const wave = document.getElementById('call-wave');
+  if(wave) wave.style.opacity='1';
+}
+
+function _startCallTimer() {
+  _callSecs = 0;
+  clearInterval(_callTimerInterval);
+  _callTimerInterval = setInterval(()=>{
+    _callSecs++;
+    const m=Math.floor(_callSecs/60), s=_callSecs%60;
+    const el=document.getElementById('call-timer');
+    if(el) el.textContent=m+':'+(s<10?'0':'')+s;
+    const st=document.getElementById('call-status');
+    if(st) st.textContent='Ulandi ✓';
+  }, 1000);
+}
+
+function toggleCallMic(){ if(!_localStream)return; const t=_localStream.getAudioTracks()[0]; if(!t)return; t.enabled=!t.enabled; const btn=document.getElementById('call-mic-btn'); if(btn){btn.style.background=t.enabled?'rgba(255,255,255,.12)':'rgba(229,62,62,.6)';} toast(t.enabled?'🎤 Mikrofon yoqildi':'🔇 Mikrofon o\'chirildi'); }
+function toggleCallCam(){ if(!_localStream)return; const t=_localStream.getVideoTracks()[0]; if(!t)return; t.enabled=!t.enabled; const btn=document.getElementById('call-cam-btn'); if(btn){btn.style.background=t.enabled?'rgba(255,255,255,.12)':'rgba(229,62,62,.6)';} toast(t.enabled?'📹 Kamera yoqildi':'🎥 Kamera o\'chirildi'); }
+function toggleSpeaker(){ const a=document.getElementById('call-remote-aud'); if(!a)return; a.muted=!a.muted; const btn=document.getElementById('call-spk-btn'); if(btn){btn.style.background=a.muted?'rgba(229,62,62,.6)':'rgba(255,255,255,.12)';} toast(a.muted?'🔇 Karnay o\'chirildi':'🔊 Karnay yoqildi'); }
+
+let _ringtoneCtx = null;
+function playRingtone() {
+  stopRingtone();
+  try {
+    _ringtoneCtx = new AudioContext();
+    const play = (freq, t) => {
+      const o=_ringtoneCtx.createOscillator(), g=_ringtoneCtx.createGain();
+      o.connect(g); g.connect(_ringtoneCtx.destination);
+      o.frequency.value=freq; g.gain.value=0.08;
+      o.start(_ringtoneCtx.currentTime+t); o.stop(_ringtoneCtx.currentTime+t+0.2);
+    };
+    const loop=()=>{ play(880,0); play(660,0.25); setTimeout(loop,2000); };
+    loop();
+  } catch(e){}
+}
+function stopRingtone(){ try{ _ringtoneCtx?.close(); _ringtoneCtx=null; }catch{} }
+
+function removeCallUI(){ const ui=document.getElementById('call-ui'); if(ui){ui.style.opacity='0';ui.style.transition='opacity .2s';setTimeout(()=>ui.remove(),200);} }
+
+function showCallUI(type, user, state) {
+  removeCallUI();
+  const color=user.color||'#C8922A', av=initials(user.name||user.username);
+  const div=document.createElement('div'); div.id='call-ui';
+  div.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(4,4,16,.96);display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease;backdrop-filter:blur(10px)';
+
+  if(type==='video') {
+    div.innerHTML=`<div style="width:min(520px,98vw);background:#0a0a14;border-radius:20px;overflow:hidden;border:1px solid rgba(255,255,255,.07);box-shadow:0 32px 80px rgba(0,0,0,.9);display:flex;flex-direction:column">
+      <div style="padding:12px 16px;background:rgba(255,255,255,.03);border-bottom:1px solid rgba(255,255,255,.05);display:flex;align-items:center;gap:10px">
+        <div style="flex:1"><div style="font-size:15px;font-weight:700;color:#fff;font-family:'Syne',sans-serif">${esc(user.name||user.username)}</div><div style="font-size:12px;color:rgba(255,255,255,.35);margin-top:2px" id="call-status">${state==='calling'?'Chaqirilmoqda...':'Ulandi ✓'}</div></div>
+        <div style="font-size:13px;font-weight:600;color:${color};font-family:'Syne',sans-serif" id="call-timer"></div>
+      </div>
+      <div style="position:relative;background:#050508;aspect-ratio:4/3;overflow:hidden">
+        <div id="call-no-cam" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#0f1117,#1a1d2e)">
+          ${user.avatar?`<img src="${esc(user.avatar)}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid rgba(255,255,255,.12)">`:`<div style="width:80px;height:80px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${av}</div>`}
+        </div>
+        <video id="call-remote-vid" autoplay playsinline style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none"></video>
+        <video id="call-local-vid"  autoplay playsinline muted style="position:absolute;bottom:10px;right:10px;width:88px;height:66px;object-fit:cover;border-radius:10px;border:2px solid rgba(255,255,255,.18);background:#111;z-index:2"></video>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:center;gap:14px;padding:16px;background:#0a0a14">
+        <button id="call-mic-btn" onclick="toggleCallMic()" style="width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></button>
+        <button id="call-cam-btn" onclick="toggleCallCam()" style="width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2"/></svg></button>
+        <button onclick="endCall()" style="width:58px;height:58px;border-radius:50%;background:#e53e3e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 18px rgba(229,62,62,.5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="24"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6z"/></svg></button>
+        <button onclick="toggleFullscreen()" style="width:50px;height:50px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg></button>
+      </div>
+    </div>`;
+  } else {
+    div.innerHTML=`<div style="width:min(310px,92vw);background:#0a0a14;border-radius:28px;border:1px solid rgba(255,255,255,.07);padding:38px 22px 28px;display:flex;flex-direction:column;align-items:center;gap:18px;box-shadow:0 32px 80px rgba(0,0,0,.9)">
+      <div style="position:relative">
+        <div style="position:absolute;inset:-14px;border-radius:50%;border:1.5px solid ${color}44;animation:pulse-call 2s ease infinite"></div>
+        <div style="position:absolute;inset:-26px;border-radius:50%;border:1px solid ${color}22;animation:pulse-call 2s ease infinite .5s"></div>
+        ${user.avatar?`<img src="${esc(user.avatar)}" style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid ${color}44;position:relative;z-index:1">`:`<div style="width:88px;height:88px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;color:#fff;font-family:'Syne',sans-serif;position:relative;z-index:1">${av}</div>`}
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:20px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${esc(user.name||user.username)}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.35);margin-top:5px" id="call-status">${state==='calling'?'Chaqirilmoqda...':'Ulandi ✓'}</div>
+        <div style="font-size:14px;font-weight:600;color:${color};margin-top:3px;font-family:'Syne',sans-serif" id="call-timer"></div>
+      </div>
+      <div id="call-wave" style="display:flex;align-items:center;gap:3px;height:24px;opacity:0;transition:opacity .3s">
+        ${Array.from({length:8},(_,i)=>`<div style="width:4px;background:${color};border-radius:2px;animation:voiceAnim 1.2s ease infinite;animation-delay:${(i*.15).toFixed(2)}s"></div>`).join('')}
+      </div>
+      <audio id="call-remote-aud" autoplay style="display:none"></audio>
+      <div style="display:flex;align-items:center;gap:14px;margin-top:6px">
+        <button id="call-mic-btn" onclick="toggleCallMic()" style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22"><path d="M12 1a3 3 0 00-3 3v8a3 3 0 006 0V4a3 3 0 00-3-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/></svg></button>
+        <button onclick="endCall()" style="width:64px;height:64px;border-radius:50%;background:#e53e3e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 5px 20px rgba(229,62,62,.55)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="26"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6z"/></svg></button>
+        <button id="call-spk-btn" onclick="toggleSpeaker()" style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.1);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="22"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 010 14.14M15.54 8.46a5 5 0 010 7.07"/></svg></button>
+      </div>
+    </div>`;
+  }
+  document.body.appendChild(div);
+}
+
+function showIncomingCallUI(data) {
+  removeCallUI();
+  const color=data.from_color||'#C8922A', av=initials(data.from_name||data.from_username||'?');
+  const div=document.createElement('div'); div.id='call-ui';
+  div.style.cssText='position:fixed;inset:0;z-index:99999;background:rgba(4,4,16,.96);display:flex;align-items:center;justify-content:center;animation:fadeIn .2s ease;backdrop-filter:blur(10px)';
+  const label = data.call_type==='video'?'📹 Video qo\'ng\'iroq':'📞 Ovozli qo\'ng\'iroq';
+  div.innerHTML=`<div style="width:min(310px,92vw);background:#0a0a14;border-radius:28px;border:1px solid rgba(255,255,255,.07);padding:38px 22px 32px;display:flex;flex-direction:column;align-items:center;gap:20px;box-shadow:0 32px 80px rgba(0,0,0,.9)">
+    <div style="position:relative">
+      <div style="position:absolute;inset:-14px;border-radius:50%;border:2px solid ${color}55;animation:pulse-call 1.4s ease infinite"></div>
+      <div style="position:absolute;inset:-26px;border-radius:50%;border:1px solid ${color}28;animation:pulse-call 1.4s ease infinite .4s"></div>
+      ${data.from_avatar?`<img src="${esc(data.from_avatar)}" style="width:88px;height:88px;border-radius:50%;object-fit:cover;border:3px solid ${color}55;position:relative;z-index:1">`:`<div style="width:88px;height:88px;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:800;color:#fff;font-family:'Syne',sans-serif;position:relative;z-index:1">${av}</div>`}
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:21px;font-weight:800;color:#fff;font-family:'Syne',sans-serif">${esc(data.from_name||data.from_username)}</div>
+      <div style="font-size:14px;color:${color};margin-top:5px">${label}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,.3);margin-top:3px">Sizga qo'ng'iroq qilyapti...</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:26px;margin-top:8px">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <button onclick="rejectCall('${esc(data.from_id)}')" style="width:62px;height:62px;border-radius:50%;background:#e53e3e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(229,62,62,.5)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="26"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+        <span style="font-size:12px;color:rgba(255,255,255,.4)">Rad etish</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+        <button onclick="acceptCall()" style="width:62px;height:62px;border-radius:50%;background:#22c55e;border:none;color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(34,197,94,.55);animation:pulse-green 1.4s ease infinite"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" width="26"><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6A19.79 19.79 0 012.12 4.18 2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6z"/></svg></button>
+        <span style="font-size:12px;color:rgba(255,255,255,.4)">Qabul qilish</span>
+      </div>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  playRingtone();
+  showBrowserNotif(label, (data.from_name||data.from_username)+' sizga qo\'ng\'iroq qilyapti', data.from_avatar);
+}
+
+function toggleFullscreen(){ const ui=document.getElementById('call-ui'); if(!ui)return; if(document.fullscreenElement) document.exitFullscreen(); else ui.requestFullscreen?.(); }
+
+function initCallWS() {
+  WS.on('call_offer', d=>{
+    const data = d.data||d;
+    _pendingOffer = data;
+    showIncomingCallUI(data);
+  });
+  WS.on('call_answer', async d=>{
+    const data=d.data||d; if(!_pc) return;
+    try{ await _pc.setRemoteDescription(new RTCSessionDescription(data.answer)); } catch(e){ console.error('set answer:',e); }
+  });
+  WS.on('ice_candidate', async d=>{
+    const data=d.data||d; if(!_pc||!data.candidate) return;
+    try{ await _pc.addIceCandidate(new RTCIceCandidate(data.candidate)); } catch(e){}
+  });
+  WS.on('call_ended',   ()=>{ toast('📞 Qo\'ng\'iroq tugadi'); endCall(); });
+  WS.on('call_rejected',()=>{ toast('📞 Qo\'ng\'iroq rad etildi'); endCall(); });
+}
 /* ═══ PROFILE ═══ */
 async function openUser(param) {
   goSec('user');
@@ -802,10 +1052,26 @@ async function followUser(id,btn) {
 }
 
 async function uploadAvatar(inp){
-  try{const fd=new FormData();fd.append('image',inp.files[0]);const d=await API.uploadAv(fd);window._me.avatar=d.avatar;syncTopbar(window._me);toast('Rasm yangilandi');}catch(e){toast(e.message);}
+  if(!inp.files[0]){return;}
+  try{
+    const fd=new FormData();
+    fd.append('image',inp.files[0]);
+    const d=await API.uploadAv(fd);
+    if(d.avatar){window._me.avatar=d.avatar; syncTopbar(window._me);}
+    toast('Rasm yangilandi');
+    openUser(window._me.id);
+  }catch(e){toast(e.message);}
 }
 async function uploadBanner(inp){
-  try{const fd=new FormData();fd.append('image',inp.files[0]);await API.uploadBanner(fd);toast('Banner yangilandi');openUser(window._me.id);}catch(e){toast(e.message);}
+  if(!inp.files[0]){return;}
+  try{
+    const fd=new FormData();
+    fd.append('image',inp.files[0]);
+    const d=await API.uploadBanner(fd);
+    if(d.banner) window._me.banner=d.banner;
+    toast('Banner yangilandi');
+    openUser(window._me.id);
+  }catch(e){toast(e.message);}
 }
 
 async function startChat(username){
@@ -995,12 +1261,12 @@ function previewSubVid(inp){
     const dur=vid.duration;
     const warnEl=document.getElementById('vid-warn');
     const warnTxt=document.getElementById('vid-warn-text');
-    if(dur>10*60){
+    if(dur<10*60){
       if(warnEl){warnEl.style.background='rgba(217,64,64,.08)';warnEl.style.borderColor='rgba(217,64,64,.2)';warnEl.style.color='var(--red)';}
-      if(warnTxt) warnTxt.textContent='❌ Video '+(Math.round(dur/60))+' daqiqa! Maksimal 10 daqiqa ruxsat etilgan';
+      if(warnTxt) warnTxt.textContent='❌ Video '+(Math.floor(dur/60))+':'+(String(Math.floor(dur%60)).padStart(2,'0'))+' — Minimal 10 daqiqa kerak!';
     } else {
       if(warnEl){warnEl.style.background='rgba(46,158,91,.08)';warnEl.style.borderColor='rgba(46,158,91,.2)';warnEl.style.color='var(--grn)';}
-      if(warnTxt) warnTxt.textContent='✅ Video '+(Math.floor(dur/60))+':'+(String(Math.floor(dur%60)).padStart(2,'0'))+' — Yaroqli';
+      if(warnTxt) warnTxt.textContent='✅ Video '+(Math.floor(dur/60))+':'+(String(Math.floor(dur%60)).padStart(2,'0'))+' — Yaroqli (10+ daqiqa)';
     }
     // Show poll section
     const pollSec=document.getElementById('vid-poll-section');
@@ -1038,6 +1304,7 @@ window.initSwipeToReply=initSwipeToReply;
 window.startVoiceRec=startVoiceRec; window.cancelVoice=cancelVoice; window.sendVoiceMsg=sendVoiceMsg;
 window.startVideoCall=startVideoCall; window.startVoiceCall=startVoiceCall; window.endCall=endCall;
 window.toggleCallMic=toggleCallMic; window.toggleCallCam=toggleCallCam; window.toggleSpeaker=toggleSpeaker;
+window.acceptCall=acceptCall; window.rejectCall=rejectCall; window.initCallWS=initCallWS; window.toggleFullscreen=toggleFullscreen;
 window.openUser=openUser; window.followUser=followUser; window.uploadAvatar=uploadAvatar; window.uploadBanner=uploadBanner;
 window.loadSettings=loadSettings; window.saveProfile=saveProfile; window.doChpass=doChpass;
 window.loadAdmin=loadAdmin; window.adminBanUser=adminBanUser; window.confirmBan=confirmBan; window.closeBanModal=closeBanModal; window.adminAction=adminAction; window.adminResolve=adminResolve;

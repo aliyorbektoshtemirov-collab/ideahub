@@ -598,6 +598,66 @@ async function route(req, res) {
     return json(res, { ok: true });
   }
 
+  /* ══ VOICE MESSAGE UPLOAD ══ */
+  if (p === '/api/messages/voice' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const { fields, files } = await parseMultipart(req);
+    const toId = fields.to_id || fields.to;
+    if (!toId) return json(res, { error: "Qabul qiluvchi ko'rsatilmagan" }, 400);
+    const vf = files.voice || files.audio;
+    if (!vf || !vf.data || vf.data.length === 0) return json(res, { error: 'Audio topilmadi' }, 400);
+    const fn = uid() + '.webm';
+    fs.writeFileSync(path.join(UPLOAD, fn), vf.data);
+    const audioUrl = `/uploads/${fn}`;
+    const duration = fields.duration || '0:00';
+    const mid = uid();
+    Q.msgInsert.run(mid, u2, toId, '[Ovozli xabar]');
+    const from = Q.uById.get(u2);
+    const msg = { id: mid, from_id: u2, to_id: toId, body: '[Ovozli xabar]',
+      type: 'voice', audio_url: audioUrl, duration, is_read: 0, ago: 'Hozir',
+      created_at: Math.floor(Date.now()/1000) };
+    ws.sendTo(toId, { type: 'new_msg', data: { msg, from: { id: from.id, name: from.name, username: from.username, color: from.color, avatar: from.avatar } } });
+    ws.sendTo(u2,   { type: 'msg_sent', data: { msg } });
+    return json(res, msg, 201);
+  }
+
+  /* ══ WEBRTC SIGNALING (REST fallback) ══ */
+  if (p === '/api/call/offer' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const b = await readBody(req);
+    const from = Q.uById.get(u2);
+    ws.sendTo(b.to_id, { type: 'call_offer', data: {
+      call_type: b.call_type || 'audio', offer: b.offer,
+      from_id: u2, from_name: from.name, from_username: from.username,
+      from_avatar: from.avatar, from_color: from.color
+    }});
+    return json(res, { ok: true });
+  }
+  if (p === '/api/call/answer' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const b = await readBody(req);
+    ws.sendTo(b.to_id, { type: 'call_answer', data: { answer: b.answer, from_id: u2 } });
+    return json(res, { ok: true });
+  }
+  if (p === '/api/call/ice' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const b = await readBody(req);
+    ws.sendTo(b.to_id, { type: 'ice_candidate', data: { candidate: b.candidate, from_id: u2 } });
+    return json(res, { ok: true });
+  }
+  if (p === '/api/call/end' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const b = await readBody(req);
+    ws.sendTo(b.to_id, { type: 'call_ended', data: { from_id: u2 } });
+    return json(res, { ok: true });
+  }
+  if (p === '/api/call/reject' && m === 'POST') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const b = await readBody(req);
+    ws.sendTo(b.to_id, { type: 'call_rejected', data: { from_id: u2 } });
+    return json(res, { ok: true });
+  }
+
   /* ══ MESSAGES ══ */
   if (p === '/api/messages' && m === 'GET') {
     const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);

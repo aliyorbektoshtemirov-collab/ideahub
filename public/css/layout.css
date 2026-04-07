@@ -1,5 +1,5 @@
 /* APP */
-#app{display:none;min-height:100vh;flex-direction:column;}
+#app{display:none;min-height:100vh;flex-direction:column;overflow-x:hidden;}
 #app.vis{display:flex;}
 
 /* TOPBAR */
@@ -62,8 +62,8 @@
 .com-lsb-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
 
 /* FEED */
-#feed-area{flex:1;min-width:0;overflow-y:auto;max-height:calc(100vh - var(--tb-h) - 36px);scrollbar-width:none;padding-right:2px;}
-#feed-area::-webkit-scrollbar{display:none;}
+#feed-area{flex:1;min-width:0;overflow-y:visible;padding-right:2px;}
+
 .sort-bar{display:flex;align-items:center;gap:3px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:7px 9px;margin-bottom:10px;box-shadow:var(--shadow);}
 .sort-btn{display:flex;align-items:center;gap:5px;padding:6px 12px;border-radius:var(--r);font-size:13px;font-weight:600;color:var(--tx3);transition:all .15s;background:none;border:none;cursor:pointer;}
 .sort-btn:hover{background:var(--bg2);color:var(--tx1);}
