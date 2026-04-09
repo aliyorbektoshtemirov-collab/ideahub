@@ -455,10 +455,18 @@ function initNotifWS() {
 }
 
 /* ═══ MESSAGES ═══ */
+
+function convLastText(last) {
+  if (!last) return '';
+  if (last.type === 'image') return '📷 Rasm';
+  if (last.type === 'voice') return '🎙️ Ovozli xabar';
+  const body = typeof last.body === 'string' ? last.body : (last.body?.toString?.() || '');
+  return body.slice(0, 42);
+}
 async function loadConvos() {
   try {
     const convos = await API.messages();
-    loadContactsScroll(); // horizontal scroll
+    loadContactsScroll(convos); // horizontal scroll
     const el = document.getElementById('conv-list'); if(!el) return;
     el.innerHTML = '';
     if (!convos.length) {
@@ -477,7 +485,7 @@ async function loadConvos() {
         <div class="av" style="${avStyle(o,40)};border-radius:50%;flex-shrink:0">${avHtml(o,40,15)}</div>
         <div class="conv-info">
           <div class="conv-name">${esc(o.name||o.username)}</div>
-          <div class="conv-prev">${cv.last?esc(cv.last.body.slice(0,42)):"Suhbatni boshlang..."}</div>
+          <div class="conv-prev">${cv.last ? esc(convLastText(cv.last)) : "Suhbatni boshlang..."}</div>
         </div>
         ${cv.unread>0?'<div class="conv-dot"></div>':''}`;
       el.appendChild(d);
@@ -1356,12 +1364,11 @@ function showBanBanner(reason) {
 }
 
 /* ═══ CONTACTS HORIZONTAL SCROLL ═══ */
-async function loadContactsScroll() {
+function loadContactsScroll(convos) {
   const el = document.getElementById('contacts-scroll'); if (!el) return;
   try {
-    const convos = await API.messages();
+    if (!convos || !convos.length) { el.style.display='none'; return; }
     el.innerHTML = '';
-    if (!convos.length) { el.style.display='none'; return; }
     el.style.display = 'flex';
     convos.slice(0,20).forEach(cv => {
       const o = cv.other;

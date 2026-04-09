@@ -242,6 +242,12 @@
       </div>
 
       <div id="sec-post" class="section">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <button onclick="history.length>1?history.back():goSec('home')" style="display:flex;align-items:center;gap:6px;background:none;border:none;color:var(--tx3);font-size:13px;font-weight:600;cursor:pointer;padding:6px 10px;border-radius:var(--r);transition:all .15s" onmouseenter="this.style.background='var(--bg2)'" onmouseleave="this.style.background='none'">
+            <svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2.5' width='16' height='16'><polyline points='15 18 9 12 15 6'/></svg>
+            Orqaga
+          </button>
+        </div>
         <div id="post-detail"></div>
         <div id="cmts-cnt" style="margin-top:8px"></div>
       </div>

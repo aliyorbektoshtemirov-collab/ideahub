@@ -8,7 +8,7 @@ function buildPost(p, isDetail = false) {
   const sc   = p.score || 0;
   const uV   = p.my_vote === 1, dV = p.my_vote === -1;
   const scCls = uV ? ' up' : dV ? ' dn' : '';
-  const isMine = p.user_id === window._me?.id;
+  const isMine = p.user_id === window._me?.id || window._me?.is_admin;
 
   /* media */
   let mediaHtml = '';
@@ -197,12 +197,16 @@ function setFeedSort(sort) {
 
 async function openPost(id) {
   goSec('post');
+  // Scroll to top when opening post
+  document.querySelector('.main-content')?.scrollTo(0, 0);
+  window.scrollTo(0, 0);
   const pd = document.getElementById('post-detail');
   const cc = document.getElementById('cmts-cnt');
   if (pd) pd.innerHTML = spinner();
   if (cc) cc.innerHTML = '';
   try {
     const post = await API.post(id);
+    if (!post) { if(pd) pd.innerHTML = emptyEl('close','Topilmadi',''); return; }
     if (pd) { pd.innerHTML = buildPost(post, true); setupMediaInDetail(pd); }
     if (cc) {
       cc.innerHTML = `
@@ -450,3 +454,38 @@ window.renderComments=renderComments; window.buildCmtNode=buildCmtNode;
 window.voteCmt=voteCmt; window.delCmt=delCmt; window.copyLink=copyLink;
 window.toggleReplyForm=toggleReplyForm; window.initScrollFeed=initScrollFeed; window.initFeedWS=initFeedWS;
 window.votePoll=votePoll; window.buildPollHtml=buildPollHtml;
+
+/* ═══ POST DELETE ═══ */
+let _delPostId = null;
+
+function confirmDelPost(id) {
+  _delPostId = id;
+  document.getElementById('del-overlay')?.classList.add('open');
+}
+
+function closeDelPost() {
+  _delPostId = null;
+  document.getElementById('del-overlay')?.classList.remove('open');
+}
+
+async function doDelPost() {
+  if (!_delPostId) return;
+  const pid = _delPostId;
+  closeDelPost();
+  try {
+    await API.delPost(pid);
+    // Remove card from feed/detail
+    document.getElementById('pc-' + pid)?.remove();
+    // If we're in post detail, go back to home
+    if (document.getElementById('sec-post')?.classList.contains('active')) {
+      goSec('home');
+    }
+    toast("Post o'chirildi");
+  } catch(e) {
+    toast(e.message || "O'chirishda xatolik");
+  }
+}
+
+window.confirmDelPost = confirmDelPost;
+window.closeDelPost   = closeDelPost;
+window.doDelPost      = doDelPost;
