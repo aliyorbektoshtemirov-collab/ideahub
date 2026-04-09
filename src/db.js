@@ -115,9 +115,15 @@ db.exec(`
     from_id TEXT NOT NULL,
     to_id TEXT NOT NULL,
     body TEXT NOT NULL,
+    type TEXT DEFAULT 'text',
+    image_url TEXT,
+    audio_url TEXT,
+    duration TEXT,
     is_read INTEGER DEFAULT 0,
     created_at INTEGER DEFAULT (unixepoch())
   );
+  -- Add columns if they don't exist (migration)
+  CREATE TABLE IF NOT EXISTS _meta (k TEXT PRIMARY KEY, v TEXT);
   CREATE TABLE IF NOT EXISTS notifications (
     id TEXT PRIMARY KEY,
     to_id TEXT NOT NULL,
@@ -173,6 +179,10 @@ try { db.exec('ALTER TABLE posts ADD COLUMN audio TEXT'); } catch {}
 try { db.exec('ALTER TABLE communities ADD COLUMN avatar TEXT'); } catch {}
 try { db.exec('ALTER TABLE communities ADD COLUMN banner TEXT'); } catch {}
 try { db.exec('ALTER TABLE users ADD COLUMN followers INTEGER DEFAULT 0'); } catch {}
+try { db.exec('ALTER TABLE messages ADD COLUMN type TEXT DEFAULT \'text\''); } catch {}
+try { db.exec('ALTER TABLE messages ADD COLUMN image_url TEXT'); } catch {}
+try { db.exec('ALTER TABLE messages ADD COLUMN audio_url TEXT'); } catch {}
+try { db.exec('ALTER TABLE messages ADD COLUMN duration TEXT'); } catch {}
 
 const Q = {
   /* users */
@@ -203,6 +213,7 @@ const Q = {
   comSearch: db.prepare('SELECT c.*,u.username as oname FROM communities c JOIN users u ON c.owner_id=u.id WHERE lower(c.slug) LIKE ? OR lower(c.name) LIKE ? LIMIT 20'),
   comInsert: db.prepare('INSERT INTO communities(id,slug,name,description,color,owner_id) VALUES(?,?,?,?,?,?)'),
   comUpdate: db.prepare('UPDATE communities SET name=?,description=?,rules=?,color=? WHERE id=?'),
+  comDelete: db.prepare('DELETE FROM communities WHERE id=?'),
   comIncMem: db.prepare('UPDATE communities SET members=members+1 WHERE id=?'),
   comDecMem: db.prepare('UPDATE communities SET members=MAX(0,members-1) WHERE id=?'),
   comTop:    db.prepare('SELECT c.*,u.username as oname FROM communities c JOIN users u ON c.owner_id=u.id ORDER BY c.members DESC LIMIT 10'),
@@ -265,7 +276,7 @@ const Q = {
   /* messages */
   msgConvos:   db.prepare('SELECT DISTINCT CASE WHEN from_id=? THEN to_id ELSE from_id END as oid FROM messages WHERE from_id=? OR to_id=?'),
   msgThread:   db.prepare('SELECT * FROM messages WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?) ORDER BY created_at ASC LIMIT 100'),
-  msgInsert:   db.prepare('INSERT INTO messages(id,from_id,to_id,body) VALUES(?,?,?,?)'),
+  msgInsert:   db.prepare('INSERT INTO messages(id,from_id,to_id,body,type,image_url,audio_url,duration) VALUES(?,?,?,?,?,?,?,?)'),
   msgMarkRead: db.prepare('UPDATE messages SET is_read=1 WHERE from_id=? AND to_id=?'),
   msgLast:     db.prepare('SELECT * FROM messages WHERE (from_id=? AND to_id=?) OR (from_id=? AND to_id=?) ORDER BY created_at DESC LIMIT 1'),
   msgUnread:   db.prepare('SELECT COUNT(*) as c FROM messages WHERE to_id=? AND is_read=0'),

@@ -31,7 +31,8 @@ async function openCommunity(slug) {
             <div class="com-hd-sub">${esc(com.slug)} &middot; ${fmtNum(com.members)} a'zo</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center;margin-left:auto">
-            ${com.is_owner ? `<button class="btn btn-ghost" style="padding:7px 13px;font-size:12px" onclick="editCom('${esc(com.slug)}')">⚙ Sozlash</button>` : ''}
+            ${com.is_owner ? `<button class="btn btn-ghost" style="padding:7px 13px;font-size:12px" onclick="editCom('${esc(com.slug)}')">⚙ Sozlash</button>
+              <button class="btn btn-danger" style="padding:7px 13px;font-size:12px" onclick="openDeleteCom('${esc(com.slug)}','${esc(com.name)}')">🗑️ O'chirish</button>` : ''}
             <button class="btn ${com.is_member?'btn-outline':'btn-gold'}" id="jb-${esc(com.id)}" onclick="toggleJoin('${esc(com.slug)}','${esc(com.id)}',this)">
               ${com.is_member ? `${IC.check} A'zo` : `${IC.plus} Qo'shilish`}
             </button>
@@ -457,6 +458,7 @@ function initNotifWS() {
 async function loadConvos() {
   try {
     const convos = await API.messages();
+    loadContactsScroll(); // horizontal scroll
     const el = document.getElementById('conv-list'); if(!el) return;
     el.innerHTML = '';
     if (!convos.length) {
@@ -537,6 +539,8 @@ function addBubble(msg, isMe) {
   if(msg.type==='voice') {
     const bars=Array.from({length:20},(_,i)=>`<span style="height:${4+Math.round(Math.abs(Math.sin(i*.8))*14)}px;animation-delay:${(i*.06).toFixed(2)}s"></span>`).join('');
     bodyHtml=`<div class="voice-msg-bubble"><div class="voice-play-btn" onclick="playVoiceMsg(this,'${esc(msg.audio_url||'')}')">▶</div><div class="voice-bars">${bars}</div><span class="player-time">${msg.duration||'0:00'}</span></div>`;
+  } else if(msg.type==='image') {
+    bodyHtml=`<div class="chat-img-bubble"><img src="${esc(msg.image_url||'')}" alt="Rasm" onclick="window.open('${esc(msg.image_url||'')}','_blank')" style="max-width:220px;max-height:220px;border-radius:10px;cursor:zoom-in;display:block;object-fit:cover"></div>`;
   } else { bodyHtml=esc(msg.body); }
   const seenTick=isMe?(msg.seen?'<span class="b-status seen" title="Ko\'rildi">✓✓</span>':'<span class="b-status">✓</span>'):'';
   d.innerHTML=`${pinned}${fwd}${replyHtml}${bodyHtml}<div class="b-time">${msg.ago||'Hozir'}${seenTick}</div>`;
@@ -1134,6 +1138,7 @@ async function loadSettings() {
       </div>
       <div class="set-card">
         <div class="set-title"><span class="set-title-ico">🚪</span> Chiqish</div>
+        ${window._me?.is_admin ? `<button class="btn btn-gold" style="margin-bottom:10px;width:100%" onclick="goSec('admin');loadAdmin()">🛡️ Admin Panelni ochish</button>` : ''}
         <button class="btn btn-danger" onclick="doLogout()">Hisobdan chiqish</button>
       </div>`;
   } catch(e){el.innerHTML=emptyEl('close','Xatolik',e.message);}
@@ -1149,34 +1154,94 @@ async function doChpass(){
 }
 
 /* ═══ ADMIN ═══ */
+let _adminTab = 'users', _adminSearch = '';
+
 async function loadAdmin(){
   const el=document.getElementById('admin-cnt'); if(!el) return;
   el.innerHTML=spinner();
   try {
     const d=await API.adminStats();
     el.innerHTML=`
-      <div class="set-card">
-        <div class="set-title">📊 Statistika</div>
-        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px">
-          ${[['Foydalanuvchilar',d.users],['Postlar',d.posts],['Izohlar',d.comments],['Jamoalar',d.communities]].map(([l,v])=>`<div style="background:var(--bg2);border-radius:var(--r-lg);padding:14px;text-align:center"><div style="font-size:22px;font-weight:800;font-family:'Syne',sans-serif;color:var(--gold)">${fmtNum(v)}</div><div style="font-size:12px;color:var(--tx4);margin-top:3px">${l}</div></div>`).join('')}
+      <div class="set-card" style="padding:0;overflow:hidden">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr)">
+          ${[['👥','Foydalanuvchilar',d.users,'#4D8FFF'],['📝','Postlar',d.posts,'#46C97A'],['💬','Izohlar',d.comments,'#9B6FD4'],['🚩','Shikoyatlar',d.reports,'#E8703A']].map(([ico,l,v,c])=>`
+          <div style="padding:16px 12px;text-align:center;border-right:1px solid var(--border)">
+            <div style="font-size:20px;margin-bottom:4px">${ico}</div>
+            <div style="font-size:22px;font-weight:800;font-family:'Syne',sans-serif;color:${c}">${fmtNum(v)}</div>
+            <div style="font-size:11px;color:var(--tx4);margin-top:2px">${l}</div>
+          </div>`).join('')}
         </div>
       </div>
-      <div class="set-card">
-        <div class="set-title">👥 Foydalanuvchilar</div>
-        ${(d.users||[]).slice(0,20).map(u=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
-          <div class="av" style="${avStyle(u,36)};border-radius:50%;font-size:13px;flex-shrink:0">${avHtml(u,36,12)}</div>
-          <div style="flex:1"><div style="font-size:13px;font-weight:600">${esc(u.name)}</div><div style="font-size:11px;color:var(--tx4)">u/${esc(u.username)} ${u.is_admin?'👑':''} ${u.is_banned?'🚫':''}</div></div>
-          <div style="display:flex;gap:4px">
-            ${!u.is_admin?`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="adminAction('${u.id}','makeAdmin')">Admin</button>`:''}
-            <button class="btn btn-danger" style="font-size:11px;padding:4px 8px" onclick="adminBanUser('${u.id}',${u.is_banned})">${u.is_banned?'Blokdan chiqarish':'Bloklash'}</button>
-          </div>
-        </div>`).join('')}
+      <div style="display:flex;gap:4px;margin-bottom:12px">
+        <button class="sort-btn${_adminTab==='users'?' active':''}" onclick="switchAdminTab('users')" style="flex:1">👥 Foydalanuvchilar</button>
+        <button class="sort-btn${_adminTab==='reports'?' active':''}" onclick="switchAdminTab('reports')" style="flex:1">🚩 Shikoyatlar</button>
       </div>
-      <div class="set-card">
-        <div class="set-title">🚩 Shikoyatlar (${(d.reports||[]).length})</div>
-        ${(d.reports||[]).length?d.reports.map(r=>`<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div style="font-size:13px;font-weight:600">${esc(r.reason)}</div><div style="font-size:12px;color:var(--tx4)">${esc(r.rname)} &middot; ${r.ago}</div><div style="margin-top:7px;display:flex;gap:6px"><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="adminResolve('${r.id}','resolved')">Hal qilindi</button><button class="btn btn-danger" style="padding:4px 10px;font-size:11px" onclick="adminResolve('${r.id}','dismissed')">Rad etish</button></div></div>`).join(''):'<div style="color:var(--tx4);font-size:13px">Shikoyatlar yo\'q</div>'}
-      </div>`;
+      <div style="position:relative;margin-bottom:12px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14" style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--tx4);pointer-events:none"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="inp" id="admin-search-inp" placeholder="Qidiruv..." value="${esc(_adminSearch)}" oninput="_adminSearch=this.value;renderAdminContent(${JSON.stringify(d).replace(/</g,'\\u003c')})" style="padding-left:34px">
+      </div>
+      <div id="admin-tab-content"></div>`;
+    renderAdminContent(d);
   } catch(e){el.innerHTML=emptyEl('close','Xatolik',e.message);}
+}
+
+function switchAdminTab(tab) {
+  _adminTab = tab;
+  document.querySelectorAll('[onclick^="switchAdminTab"]').forEach(b=>{
+    b.classList.toggle('active', b.getAttribute('onclick').includes(`'${tab}'`));
+  });
+  const lastData = window._adminLastData;
+  if (lastData) renderAdminContent(lastData);
+}
+
+function renderAdminContent(d) {
+  window._adminLastData = d;
+  const el = document.getElementById('admin-tab-content'); if (!el) return;
+  const q = (_adminSearch||'').toLowerCase();
+  if (_adminTab === 'users') {
+    const users = (d.users||[]).filter(u => !q || u.username.toLowerCase().includes(q) || u.name.toLowerCase().includes(q));
+    el.innerHTML = `<div class="set-card" style="padding:0">
+      ${users.slice(0,50).map(u=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--border)">
+        <div class="av" style="${avStyle(u,38)};border-radius:50%;font-size:13px;flex-shrink:0">${avHtml(u,38,12)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700;font-family:'Syne',sans-serif;display:flex;align-items:center;gap:5px">
+            ${esc(u.name)}
+            ${u.is_admin?'<span style="font-size:10px;background:rgba(200,146,42,.15);color:var(--gold);padding:1px 6px;border-radius:10px">👑 Admin</span>':''}
+            ${u.is_banned?'<span style="font-size:10px;background:rgba(217,64,64,.12);color:var(--red);padding:1px 6px;border-radius:10px">🚫 Bloklangan</span>':''}
+          </div>
+          <div style="font-size:11px;color:var(--tx4)">u/${esc(u.username)} · ${fmtNum(u.karma||0)} karma</div>
+          ${u.ban_reason?`<div style="font-size:11px;color:var(--red);margin-top:2px">Sabab: ${esc(u.ban_reason)}</div>`:''}
+        </div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          ${!u.is_admin?`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="adminAction('${u.id}','makeAdmin')">👑</button>`:`<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="adminAction('${u.id}','remAdmin')">−👑</button>`}
+          <button class="btn ${u.is_banned?'btn-outline':'btn-danger'}" style="font-size:11px;padding:4px 8px" onclick="adminBanUser('${u.id}',${u.is_banned})">${u.is_banned?'Ochish':'Blok'}</button>
+        </div>
+      </div>`).join('')}
+      ${!users.length?`<div style="padding:20px;text-align:center;color:var(--tx4);font-size:13px">Hech narsa topilmadi</div>`:''}
+    </div>`;
+  } else {
+    const reports = (d.reports||[]).filter(r => !q || r.reason.toLowerCase().includes(q) || (r.rname||'').toLowerCase().includes(q));
+    el.innerHTML = `<div class="set-card" style="padding:0">
+      ${reports.length?reports.map(r=>`
+      <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-bottom:8px">
+          <div style="flex:1">
+            <div style="font-size:13px;font-weight:600">${esc(r.reason)}</div>
+            <div style="font-size:11px;color:var(--tx4);margin-top:2px">
+              ${esc(r.rname||'?')} tomonidan · ${r.ago}
+              ${r.post_id?`· <span style="cursor:pointer;color:var(--blu)" onclick="openPost('${r.post_id}')">Postga o'tish</span>`:''}
+            </div>
+          </div>
+          <span style="font-size:11px;padding:2px 8px;border-radius:10px;background:rgba(232,112,58,.12);color:#E8703A;flex-shrink:0">Kutilmoqda</span>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:11px" onclick="adminResolve('${r.id}','resolved')">✅ Hal qilindi</button>
+          <button class="btn btn-danger" style="padding:5px 12px;font-size:11px" onclick="adminResolve('${r.id}','dismissed')">❌ Rad etish</button>
+        </div>
+      </div>`).join(''):`<div style="padding:24px;text-align:center;color:var(--tx4);font-size:13px">Shikoyatlar yo'q 🎉</div>`}
+    </div>`;
+  }
 }
 
 async function adminBanUser(id,isBanned){
@@ -1192,6 +1257,127 @@ async function confirmBan(){
 function closeBanModal(){document.getElementById('ban-modal').classList.remove('open');_pendingBanId=null;}
 async function adminAction(id,action){try{await API.adminAction({target_id:id,action});toast('Yangilandi');loadAdmin();}catch(e){toast(e.message);}}
 async function adminResolve(id,status){try{await API.adminResolve(id,status);toast('Hal qilindi');loadAdmin();}catch(e){toast(e.message);}}
+
+/* ═══ COMMUNITY DELETE ═══ */
+let _delComSlug = null;
+function openDeleteCom(slug, name) {
+  _delComSlug = slug;
+  const modal = document.getElementById('com-delete-modal');
+  const label = document.getElementById('com-del-slug-label');
+  const inp   = document.getElementById('com-del-confirm-inp');
+  if (!modal) return;
+  if (label) label.textContent = name || slug;
+  if (inp)   inp.value = '';
+  modal.classList.add('open');
+  setTimeout(()=>inp?.focus(), 150);
+}
+async function doDeleteCom() {
+  const slug = _delComSlug; if (!slug) return;
+  const inp  = document.getElementById('com-del-confirm-inp');
+  const label = document.getElementById('com-del-slug-label')?.textContent || '';
+  const val  = (inp?.value||'').trim();
+  if (val !== label && val !== slug) { toast('Jamoa nomini to\'g\'ri kiriting'); return; }
+  try {
+    await fetch(`/api/communities/${slug}`, { method:'DELETE', headers:{ Authorization:'Bearer '+Tok.get() } });
+    document.getElementById('com-delete-modal').classList.remove('open');
+    toast('Jamoa o\'chirildi');
+    goSec('home');
+    loadFeed(true);
+    loadMyComs();
+  } catch(e) { toast('Xatolik yuz berdi'); }
+}
+
+/* ═══ EMOJI PICKER ═══ */
+const EMOJIS = ['😀','😂','🥰','😍','🤩','😎','🥳','😊','😁','😆','😅','🤣','☺️','😇','🙂','🙃','😉','😌','😋','😛','😜','🤪','😝','🤑','🤗','🤭','🤫','🤔','😐','😑','😶','🙄','😏','😣','😥','😮','🤐','😯','😪','😫','😴','😌','🤤','😷','🤒','🤕','🤢','🤧','🥵','🥶','🥴','😵','🤯','🤠','🥸','😎','🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖','😣','😞','😓','😩','😫','🤬','😤','😠','😡','🤡','👹','👺','💀','☠️','👻','👽','👾','🤖','😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈','🙉','🙊','👋','🤚','🖐','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍','👎','✊','👊','🤛','🤜','👏','🙌','👐','🤲','🤝','🙏','❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️','✝️','☯️','🔥','💥','✨','⭐','🌟','🎉','🎊','🎈','🎁','🏆','🥇','🌈','☀️','🌙','⚡','❄️','🌊','🌸','🌺','🍕','🍔','🍟','🍜','🍱','🍣','🍦','🎂','🍰','☕','🧃','🥤','🍺','🚀','✈️','🚗','🎵','🎶','🎮','📱','💻','⌚','📷','🎬','📚','💰','💎'];
+
+let _emojiPickerOpen = false;
+function toggleEmojiPicker() {
+  const panel = document.getElementById('emoji-picker-panel');
+  if (!panel) return;
+  _emojiPickerOpen = !_emojiPickerOpen;
+  if (_emojiPickerOpen) {
+    if (!panel.children.length) {
+      EMOJIS.forEach(em => {
+        const btn = document.createElement('button');
+        btn.textContent = em;
+        btn.style.cssText = 'background:none;border:none;font-size:22px;cursor:pointer;padding:3px;border-radius:6px;transition:transform .1s;line-height:1;font-family:"Apple Color Emoji","Noto Color Emoji",sans-serif';
+        btn.onmouseenter = ()=>btn.style.transform='scale(1.3)';
+        btn.onmouseleave = ()=>btn.style.transform='scale(1)';
+        btn.onclick = () => {
+          const inp = document.getElementById('chat-inp');
+          if (inp) { inp.value += em; inp.focus(); }
+        };
+        panel.appendChild(btn);
+      });
+    }
+    panel.style.display = 'flex';
+    setTimeout(()=>{
+      const close = (e)=>{ if(!panel.contains(e.target)&&!e.target.closest('[onclick="toggleEmojiPicker()"]')){panel.style.display='none';_emojiPickerOpen=false;document.removeEventListener('click',close);} };
+      document.addEventListener('click', close);
+    }, 50);
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+/* ═══ CHAT IMAGE SEND ═══ */
+async function sendChatImage(inp) {
+  if (!inp.files?.[0]) return;
+  if (!_chatWith) { toast('Avval suhbatdosh tanlang'); return; }
+  const file = inp.files[0];
+  inp.value = '';
+  // Show preview locally
+  const localUrl = URL.createObjectURL(file);
+  addBubble({ id:'img-'+Date.now(), type:'image', image_url:localUrl, body:'[Rasm]', ago:'Hozir', seen:false }, true);
+  // Upload to server
+  try {
+    const fd = new FormData();
+    fd.append('image', file);
+    fd.append('to_id', _chatWith.id);
+    const res = await fetch('/api/messages/image', {
+      method:'POST',
+      headers:{ Authorization:'Bearer '+Tok.get() },
+      body: fd
+    });
+    if (!res.ok) { const d=await res.json(); toast(d.error||'Rasm yuborilmadi'); }
+  } catch(e) { toast('Rasm yuborilmadi'); }
+}
+
+/* ═══ BAN BANNER ═══ */
+function showBanBanner(reason) {
+  const el = document.getElementById('ban-banner');
+  const rt = document.getElementById('ban-reason-txt');
+  if (!el) return;
+  if (reason) { if(rt) rt.textContent = `Sabab: ${reason}`; }
+  el.style.display = 'block';
+  // Push content down
+  const app = document.getElementById('app');
+  if (app) app.style.paddingTop = '48px';
+}
+
+/* ═══ CONTACTS HORIZONTAL SCROLL ═══ */
+async function loadContactsScroll() {
+  const el = document.getElementById('contacts-scroll'); if (!el) return;
+  try {
+    const convos = await API.messages();
+    el.innerHTML = '';
+    if (!convos.length) { el.style.display='none'; return; }
+    el.style.display = 'flex';
+    convos.slice(0,20).forEach(cv => {
+      const o = cv.other;
+      const btn = document.createElement('div');
+      btn.className = 'contact-bubble';
+      btn.onclick = () => openChat(o);
+      btn.innerHTML = `
+        <div class="contact-av" style="${avStyle(o,46)};border-radius:50%;position:relative;flex-shrink:0">
+          ${avHtml(o,46,14)}
+          ${cv.unread>0?'<div style="position:absolute;top:-1px;right:-1px;width:12px;height:12px;border-radius:50%;background:var(--red);border:2px solid var(--surface)"></div>':''}
+        </div>
+        <div class="contact-name">${esc((o.name||o.username).split(' ')[0])}</div>`;
+      el.appendChild(btn);
+    });
+  } catch {}
+}
 
 /* ═══ SAVED ═══ */
 async function loadSavedPosts(){
@@ -1308,6 +1494,14 @@ window.acceptCall=acceptCall; window.rejectCall=rejectCall; window.initCallWS=in
 window.openUser=openUser; window.followUser=followUser; window.uploadAvatar=uploadAvatar; window.uploadBanner=uploadBanner;
 window.loadSettings=loadSettings; window.saveProfile=saveProfile; window.doChpass=doChpass;
 window.loadAdmin=loadAdmin; window.adminBanUser=adminBanUser; window.confirmBan=confirmBan; window.closeBanModal=closeBanModal; window.adminAction=adminAction; window.adminResolve=adminResolve;
+window.switchAdminTab=switchAdminTab;
+window.openDeleteCom=openDeleteCom;
+window.doDeleteCom=doDeleteCom;
+window.toggleEmojiPicker=toggleEmojiPicker;
+window.sendChatImage=sendChatImage;
+window.showBanBanner=showBanBanner;
+window.loadContactsScroll=loadContactsScroll;
+window.renderAdminContent=renderAdminContent;
 window.loadSavedPosts=loadSavedPosts;
 window.openCreateCom=openCreateCom; window.closeCreateCom=closeCreateCom; window.selectCCColor=selectCCColor; window.selectECColor=selectECColor; window.doCreateCom=doCreateCom;
 window.previewSubImg=previewSubImg; window.previewSubVid=previewSubVid; window.previewSubAud=previewSubAud;

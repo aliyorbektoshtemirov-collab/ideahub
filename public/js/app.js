@@ -115,6 +115,8 @@ async function boot(initialUser){
   const app=document.getElementById('app'); app.classList.add('vis');
   window._me=initialUser||await API.me();
   syncTopbar(window._me);
+  // Ban banner
+  if (window._me?.is_banned) showBanBanner(window._me.ban_reason);
   WS.connect(Tok.get());
   initFeedWS();initMsgWS();initNotifWS();if(typeof initCallWS==='function')initCallWS();
   await Promise.all([loadFeed(true),loadNotifCount(),loadConvos(),loadMyComs(),loadTopComs(),initComPicker()]);

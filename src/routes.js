@@ -20,6 +20,15 @@ function getAuth(req) {
   const tok = h.startsWith('Bearer ') ? h.slice(7) : null;
   return tok ? verifyToken(tok) : null;
 }
+// Returns user if authed and not banned, else sends error and returns null
+function getAuthNotBanned(req, res) {
+  const u2 = getAuth(req);
+  if (!u2) { json(res, { error: 'Unauthorized' }, 401); return null; }
+  const user = Q.uById.get(u2);
+  if (!user) { json(res, { error: 'Topilmadi' }, 404); return null; }
+  if (user.is_banned) { json(res, { error: `Hisob bloklangan: ${user.ban_reason || ''}`, banned: true }, 403); return null; }
+  return u2;
+}
 async function readBody(req) {
   return new Promise((ok, err) => {
     let d = '';
@@ -278,7 +287,7 @@ async function route(req, res) {
     return json(res, users);
   }
   if (p.match(/^\/api\/users\/[^/]+\/follow$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const param = p.split('/')[3];
     const target = Q.uBySlug.get(param, param);
     if (!target || target.id === u2) return json(res, { error: 'Ruxsat' }, 400);
@@ -328,7 +337,7 @@ async function route(req, res) {
     });
   }
   if (p === '/api/communities' && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const b = await readBody(req);
     const slug = (b.slug || '').toLowerCase().trim().replace(/\s+/g,'-');
     const name = (b.name || '').trim();
@@ -341,6 +350,18 @@ async function route(req, res) {
     Q.comIncMem.run(cid);
     return json(res, Q.comById.get(cid), 201);
   }
+  if (p.match(/^\/api\/communities\/[^/]+$/) && m === 'DELETE') {
+    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const slug = p.split('/')[3];
+    const com  = Q.comBySlug.get(slug);
+    if (!com) return json(res, { error: 'Topilmadi' }, 404);
+    const user = Q.uById.get(u2);
+    if (com.owner_id !== u2 && !user?.is_admin) return json(res, { error: "Ruxsat yo'q" }, 403);
+    Q.comDelete.run(com.id);
+    ws.sendAll({ type: 'com_deleted', data: { slug } });
+    return json(res, { ok: true });
+  }
+
   if (p.match(/^\/api\/communities\/[^/]+$/) && m === 'PUT') {
     const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
     const slug = p.split('/')[3];
@@ -374,7 +395,7 @@ async function route(req, res) {
     return json(res, Q.comBySlug.get(slug));
   }
   if (p.match(/^\/api\/communities\/[^/]+\/join$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const slug = p.split('/')[3];
     const com  = Q.comBySlug.get(slug);
     if (!com) return json(res, { error: 'Topilmadi' }, 404);
@@ -407,7 +428,7 @@ async function route(req, res) {
     return json(res, { ...fmtPost(post, u2), comments });
   }
   if (p === '/api/posts' && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const ct = req.headers['content-type'] || '';
     let title='', body='', comSlug='', type='text', link=null, image=null, video=null, audio=null, flair=null;
     let pollQuestion=null, pollOptions=null, pollDays=3;
@@ -478,7 +499,7 @@ async function route(req, res) {
     return json(res, { ok: true });
   }
   if (p.match(/^\/api\/posts\/[^/]+\/vote$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const pid  = p.split('/')[3];
     const own  = Q.pOwner.get(pid); if (!own) return json(res, { error: 'Topilmadi' }, 404);
     const b    = await readBody(req);
@@ -495,7 +516,7 @@ async function route(req, res) {
     return json(res, { score, my_vote: myVote, upvotes: c.up, downvotes: c.dn });
   }
   if (p.match(/^\/api\/posts\/[^/]+\/save$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const pid = p.split('/')[3];
     const saved = !!Q.svCheck.get(u2, pid);
     if (saved) { Q.svDelete.run(u2, pid); return json(res, { saved: false }); }
@@ -504,7 +525,7 @@ async function route(req, res) {
 
   /* ══ POLL VOTE ══ */
   if (p.match(/^\/api\/polls\/[^/]+\/vote$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const pollId = p.split('/')[3];
     const b = await readBody(req);
     const optIdx = parseInt(b.option);
@@ -539,7 +560,7 @@ async function route(req, res) {
 
   /* ══ COMMENTS ══ */
   if (p.match(/^\/api\/posts\/[^/]+\/comments$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const pid = p.split('/')[3];
     const post = Q.pOne.get(pid); if (!post) return json(res, { error: 'Topilmadi' }, 404);
     const b = await readBody(req);
@@ -572,7 +593,7 @@ async function route(req, res) {
     return json(res, comment, 201);
   }
   if (p.match(/^\/api\/comments\/[^/]+\/vote$/) && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const cid = p.split('/')[3];
     const b   = await readBody(req);
     const vote = parseInt(b.vote);
@@ -600,7 +621,7 @@ async function route(req, res) {
 
   /* ══ VOICE MESSAGE UPLOAD ══ */
   if (p === '/api/messages/voice' && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const { fields, files } = await parseMultipart(req);
     const toId = fields.to_id || fields.to;
     if (!toId) return json(res, { error: "Qabul qiluvchi ko'rsatilmagan" }, 400);
@@ -611,10 +632,31 @@ async function route(req, res) {
     const audioUrl = `/uploads/${fn}`;
     const duration = fields.duration || '0:00';
     const mid = uid();
-    Q.msgInsert.run(mid, u2, toId, '[Ovozli xabar]');
+    Q.msgInsert.run(mid, u2, toId, '[Ovozli xabar]', 'voice', null, audioUrl, duration);
     const from = Q.uById.get(u2);
     const msg = { id: mid, from_id: u2, to_id: toId, body: '[Ovozli xabar]',
       type: 'voice', audio_url: audioUrl, duration, is_read: 0, ago: 'Hozir',
+      created_at: Math.floor(Date.now()/1000) };
+    ws.sendTo(toId, { type: 'new_msg', data: { msg, from: { id: from.id, name: from.name, username: from.username, color: from.color, avatar: from.avatar } } });
+    ws.sendTo(u2,   { type: 'msg_sent', data: { msg } });
+    return json(res, msg, 201);
+  }
+
+  /* ══ IMAGE MESSAGE UPLOAD ══ */
+  if (p === '/api/messages/image' && m === 'POST') {
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
+    const { fields, files } = await parseMultipart(req);
+    const toId = fields.to_id || fields.to;
+    if (!toId) return json(res, { error: "Qabul qiluvchi ko'rsatilmagan" }, 400);
+    const imgFile = files.image;
+    if (!imgFile || !imgFile.data || imgFile.data.length === 0) return json(res, { error: 'Rasm topilmadi' }, 400);
+    const imgUrl = saveFile(imgFile, ['.jpg','.jpeg','.png','.gif','.webp']);
+    if (!imgUrl) return json(res, { error: 'Yaroqsiz rasm formati' }, 400);
+    const mid = uid();
+    Q.msgInsert.run(mid, u2, toId, '[Rasm]', 'image', imgUrl, null, null);
+    const from = Q.uById.get(u2);
+    const msg = { id: mid, from_id: u2, to_id: toId, body: '[Rasm]',
+      type: 'image', image_url: imgUrl, is_read: 0, ago: 'Hozir',
       created_at: Math.floor(Date.now()/1000) };
     ws.sendTo(toId, { type: 'new_msg', data: { msg, from: { id: from.id, name: from.name, username: from.username, color: from.color, avatar: from.avatar } } });
     ws.sendTo(u2,   { type: 'msg_sent', data: { msg } });
@@ -679,15 +721,15 @@ async function route(req, res) {
     return json(res, msgs.map(m => ({ ...m, ago: ago(m.created_at) })));
   }
   if (p === '/api/messages' && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const b  = await readBody(req);
     const toId = b.to_id || b.to;
     if (!toId || !b.body?.trim()) return json(res, { error: "Xabar bo'sh" }, 400);
     const mid  = uid();
     const body = b.body.trim();
-    Q.msgInsert.run(mid, u2, toId, body);
+    Q.msgInsert.run(mid, u2, toId, body, 'text', null, null, null);
     const from = Q.uById.get(u2);
-    const msg  = { id: mid, from_id: u2, to_id: toId, body, is_read: 0, ago: 'Hozir', created_at: Math.floor(Date.now()/1000) };
+    const msg  = { id: mid, from_id: u2, to_id: toId, body, type:'text', is_read: 0, ago: 'Hozir', created_at: Math.floor(Date.now()/1000) };
     ws.sendTo(toId, { type: 'new_msg', data: { msg, from: { id: from.id, name: from.name, username: from.username, color: from.color, avatar: from.avatar } } });
     ws.sendTo(u2,   { type: 'msg_sent', data: { msg } });
     return json(res, msg, 201);
@@ -722,7 +764,7 @@ async function route(req, res) {
 
   /* ══ REPORTS ══ */
   if (p === '/api/reports' && m === 'POST') {
-    const u2 = getAuth(req); if (!u2) return json(res, { error: 'Unauthorized' }, 401);
+    const u2 = getAuthNotBanned(req, res); if (!u2) return true;
     const b  = await readBody(req);
     if (!b.reason?.trim()) return json(res, { error: 'Sabab kerak' }, 400);
     Q.rpInsert.run(uid(), u2, b.post_id||null, b.comment_id||null, b.reason.trim());
